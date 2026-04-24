@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Famiglia in Avventura - Victory Scene</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0c0d18;
+        overflow: hidden;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      canvas {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        width: min(100vw, calc(100vh * 1080 / 1920));
+        height: min(100vh, calc(100vw * 1920 / 1080));
+        max-width: 1080px;
+        max-height: 1920px;
+        border: 2px solid #1f2848;
+        box-shadow: 0 0 0 4px #0b1028;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" width="1080" height="1920" aria-label="Victory scene"></canvas>
+    <script src="./main.js"></script>
+  </body>
+</html>
