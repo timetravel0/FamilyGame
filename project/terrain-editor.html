@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terrain Editor - Famiglia in Avventura</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07111f;
+        --panel: rgba(4, 21, 40, 0.92);
+        --line: #8da5be;
+        --accent: #ffb528;
+        --good: #44d36a;
+        --bad: #ff5d73;
+        --text: #f4f6ff;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background:
+          radial-gradient(circle at top, rgba(255, 181, 40, 0.16), transparent 24%),
+          linear-gradient(180deg, #0c1326, var(--bg) 34%, #02060d 100%);
+        color: var(--text);
+        font-family: monospace;
+      }
+      body {
+        padding: 20px;
+        box-sizing: border-box;
+      }
+      .shell {
+        max-width: 1560px;
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+      }
+      .topbar {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+        border: 1px solid rgba(141, 165, 190, 0.3);
+        border-radius: 18px;
+        background: var(--panel);
+      }
+      .topbar h1 {
+        margin: 0;
+        font-size: 24px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .topbar p {
+        margin: 0;
+        color: #c8d7ea;
+        line-height: 1.5;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      button,
+      .file {
+        border: 1px solid rgba(141, 165, 190, 0.8);
+        border-radius: 12px;
+        background: linear-gradient(180deg, #16365e, #0c2440);
+        color: var(--text);
+        font: 700 14px/1 monospace;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+      button.active {
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 1px rgba(255, 181, 40, 0.45);
+      }
+      button.primary {
+        background: linear-gradient(180deg, #ef9f21, #b96c05);
+        color: #1b1203;
+      }
+      button.danger {
+        background: linear-gradient(180deg, #8f3141, #521522);
+      }
+      .status {
+        color: #9dd3ff;
+      }
+      .sections {
+        display: grid;
+        gap: 18px;
+      }
+      .section {
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid rgba(141, 165, 190, 0.28);
+        background: rgba(0, 15, 29, 0.8);
+      }
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: baseline;
+        margin-bottom: 10px;
+      }
+      .section-head h2 {
+        margin: 0;
+        font-size: 18px;
+        color: #ffd36a;
+      }
+      .section-head small {
+        color: #9fb6cf;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid rgba(141, 165, 190, 0.25);
+        background: #14263d;
+        touch-action: none;
+        image-rendering: pixelated;
+      }
+      .legend {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        color: #c8d7ea;
+        font-size: 13px;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .swatch {
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="topbar">
+        <h1>Terrain Editor</h1>
+        <p>Terreno: disegna la linea verde. Buco: trascina per aprire un vuoto. Ripara buco: trascina sopra il vuoto per richiuderlo. Salva in localStorage oppure esporta il JSON che il gioco legge automaticamente.</p>
+        <div class="controls">
+          <button id="mode-terrain" class="active" type="button">Terreno</button>
+          <button id="mode-gap" type="button">Vuoto</button>
+          <button id="mode-erase" type="button">Ripara buco</button>
+          <button id="save-local" class="primary" type="button">Salva nel gioco</button>
+          <button id="download" type="button">Esporta JSON</button>
+          <button id="copy" type="button">Copia JSON</button>
+          <button id="reset" class="danger" type="button">Reset</button>
+          <label class="file">
+            Importa JSON
+            <input id="import" type="file" accept="application/json" hidden />
+          </label>
+          <span id="status" class="status">Caricamento...</span>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span><i class="swatch" style="background:#44d36a"></i>linea terreno</span>
+        <span><i class="swatch" style="background:#ff5d73"></i>vuoto / buco</span>
+        <span><i class="swatch" style="background:#ffb528"></i>punti attivi</span>
+      </div>
+
+      <div class="sections">
+        <div class="section">
+          <div class="section-head">
+            <h2>Strip 1</h2>
+            <small>sezione iniziale</small>
+          </div>
+          <canvas data-section="0" width="1536" height="341"></canvas>
+        </div>
+        <div class="section">
+          <div class="section-head">
+            <h2>Strip 2</h2>
+            <small>sezione centrale</small>
+          </div>
+          <canvas data-section="1" width="1536" height="341"></canvas>
+        </div>
+        <div class="section">
+          <div class="section-head">
+            <h2>Strip 3</h2>
+            <small>sezione finale</small>
+          </div>
+          <canvas data-section="2" width="1536" height="342"></canvas>
+        </div>
+      </div>
+    </div>
+    <script src="./terrain-editor.js"></script>
+  </body>
+</html>

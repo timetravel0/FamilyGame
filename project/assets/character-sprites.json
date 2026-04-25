@@ -1,0 +1,32 @@
+{
+  "dad": [
+    "./assets/character-sprites/dad/0.png",
+    "./assets/character-sprites/dad/1.png",
+    "./assets/character-sprites/dad/2.png",
+    "./assets/character-sprites/dad/3.png",
+    "./assets/character-sprites/dad/4.png",
+    "./assets/character-sprites/dad/5.png"
+  ],
+  "mom": [
+    "./assets/character-sprites/mom/0.png",
+    "./assets/character-sprites/mom/1.png",
+    "./assets/character-sprites/mom/2.png",
+    "./assets/character-sprites/mom/3.png",
+    "./assets/character-sprites/mom/4.png",
+    "./assets/character-sprites/mom/5.png"
+  ],
+  "kid": [
+    "./assets/character-sprites/kid/0.png",
+    "./assets/character-sprites/kid/1.png",
+    "./assets/character-sprites/kid/2.png",
+    "./assets/character-sprites/kid/3.png"
+  ],
+  "teen": [
+    "./assets/character-sprites/teen/0.png",
+    "./assets/character-sprites/teen/1.png",
+    "./assets/character-sprites/teen/2.png",
+    "./assets/character-sprites/teen/3.png",
+    "./assets/character-sprites/teen/4.png",
+    "./assets/character-sprites/teen/5.png"
+  ]
+}
