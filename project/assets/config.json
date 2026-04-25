@@ -4,13 +4,96 @@
     "subtitle": "Una storia di famiglia",
     "totalGems": 10,
     "timerSeconds": 238,
-    "startMessage": "Corri verso destra e raccogli le stelle"
+    "startMessage": "Corri verso destra e raccogli le stelle",
+    "startLives": 3,
+    "comboWindow": 2.5,
+    "energyDepletionRate": 0.03,
+    "energyRecoveryPerGem": 1,
+    "energyLossOnFall": 1,
+    "winBonusMultiplier": 10,
+    "scoreMultiplier": 150,
+    "pickupOffsetMultiplier": 70,
+    "pickupRadiusMultiplier": 75,
+    "floatingTextOffsetMultiplier": 150
+  },
+  "physics": {
+    "player": {
+      "walkAccel": 1200,
+      "runAccel": 1900,
+      "walkMaxSpeed": 880,
+      "runMaxSpeed": 1480,
+      "drag": 0.86,
+      "airAccel": 1500,
+      "airMaxSpeed": 2000,
+      "airDrag": 0.985,
+      "gravity": 4200,
+      "jumpVelocity": 2200,
+      "jumpForwardBoost": 220,
+      "coyoteTime": 0.08,
+      "jumpBufferTime": 0.12,
+      "fallResetYOffset": 260
+    },
+    "follower": {
+      "drag": 0.82
+    }
+  },
+  "display": {
+    "width": 1080,
+    "height": 1440,
+    "sectionStartX": 220,
+    "sectionEndXOffset": 180,
+    "overlayFadeSpeed": 4,
+    "overlayMaxAlpha": 0.78
   },
   "characters": [
-    { "id": "dad", "name": "Papà", "scale": 1.58, "bob": 2.8, "isPlayer": true },
-    { "id": "mom", "name": "Mamma", "scale": 1.52, "bob": 2.2, "isPlayer": false },
-    { "id": "kid", "name": "Bimbo", "scale": 1.40, "bob": 2.6, "isPlayer": false },
-    { "id": "teen", "name": "Teen", "scale": 1.54, "bob": 2.3, "isPlayer": false }
+    {
+      "id": "dad",
+      "name": "Papà",
+      "label": "PAPA",
+      "color": "#32b4ea",
+      "description": "Forte e protettivo, sempre pronto all avventura",
+      "stats": [6, 5, 4, 4],
+      "speed": 1480,
+      "scale": 1.58,
+      "bob": 2.8,
+      "isPlayer": true
+    },
+    {
+      "id": "mom",
+      "name": "Mamma",
+      "label": "MAMMA",
+      "color": "#ff6f91",
+      "description": "Agile e precisa, tiene tutti sulla strada giusta",
+      "stats": [5, 5, 4, 4],
+      "speed": 1460,
+      "scale": 1.52,
+      "bob": 2.2,
+      "isPlayer": false
+    },
+    {
+      "id": "kid",
+      "name": "Bimbo",
+      "label": "LOLLO",
+      "color": "#56de61",
+      "description": "Leggero e veloce, perfetto per superare i buchi",
+      "stats": [4, 5, 4, 4],
+      "speed": 1450,
+      "scale": 1.40,
+      "bob": 2.6,
+      "isPlayer": false
+    },
+    {
+      "id": "teen",
+      "name": "Teen",
+      "label": "TIFFY",
+      "color": "#ffbf38",
+      "description": "Equilibrato e pronto a guidare il gruppo",
+      "stats": [5, 4, 4, 4],
+      "speed": 1455,
+      "scale": 1.54,
+      "bob": 2.3,
+      "isPlayer": false
+    }
   ],
   "formation": [
     { "dx": 0, "dy": 0 },

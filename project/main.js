@@ -29,6 +29,15 @@ const palette = {
   fence: '#7c4d2a'
 };
 
+const GAME_SCREENS = {
+  TITLE_SCREEN:     'titleScreen',
+  CHARACTER_SELECT: 'characterSelect',
+  PLAYING:          'playing',
+  PAUSED:           'paused',
+  GAMEOVER:         'gameover',
+  WIN:              'win'
+};
+
 const stars = Array.from({ length: 34 }, (_, i) => ({
   x: 90 + ((i * 137) % 900),
   y: 390 + ((i * 89) % 520),
@@ -111,7 +120,46 @@ const DEFAULT_CONFIG = {
     subtitle: 'Una storia di famiglia',
     totalGems: 10,
     timerSeconds: 238,
-    startMessage: 'Corri verso destra e raccogli le stelle'
+    startMessage: 'Corri verso destra e raccogli le stelle',
+    startLives: 3,
+    comboWindow: 2.5,
+    energyDepletionRate: 0.03,
+    energyRecoveryPerGem: 1,
+    energyLossOnFall: 1,
+    winBonusMultiplier: 10,
+    scoreMultiplier: 150,
+    pickupOffsetMultiplier: 70,
+    pickupRadiusMultiplier: 75,
+    floatingTextOffsetMultiplier: 150
+  },
+  physics: {
+    player: {
+      walkAccel: 1200,
+      runAccel: 1900,
+      walkMaxSpeed: 880,
+      runMaxSpeed: 1480,
+      drag: 0.86,
+      airAccel: 1500,
+      airMaxSpeed: 2000,
+      airDrag: 0.985,
+      gravity: 4200,
+      jumpVelocity: 2200,
+      jumpForwardBoost: 220,
+      coyoteTime: 0.08,
+      jumpBufferTime: 0.12,
+      fallResetYOffset: 260
+    },
+    follower: {
+      drag: 0.82
+    }
+  },
+  display: {
+    width: 1080,
+    height: 1440,
+    sectionStartX: 220,
+    sectionEndXOffset: 180,
+    overlayFadeSpeed: 4,
+    overlayMaxAlpha: 0.78
   },
   characters: [
     { id: 'dad', name: 'Papà', scale: 1.58, bob: 2.8, isPlayer: true },
@@ -140,10 +188,10 @@ const DEFAULT_CONFIG = {
 };
 
 const characterMeta = {
-  dad: { label: 'PAPA', color: '#32b4ea', description: 'Forte e protettivo, sempre pronto all avventura', stats: [6, 5, 4, 4], speed: 1480 },
-  mom: { label: 'MAMMA', color: '#ff6f91', description: 'Agile e precisa, tiene tutti sulla strada giusta', stats: [5, 5, 4, 4], speed: 1460 },
-  kid: { label: 'FRATELLINO', color: '#56de61', description: 'Leggero e veloce, perfetto per superare i buchi', stats: [4, 5, 4, 4], speed: 1450 },
-  teen: { label: 'FRATELLO', color: '#ffbf38', description: 'Equilibrato e pronto a guidare il gruppo', stats: [5, 4, 4, 4], speed: 1455 }
+  dad: { speed: 1480 },
+  mom: { speed: 1460 },
+  kid: { speed: 1450 },
+  teen: { speed: 1455 }
 };
 
 let config = structuredClone(DEFAULT_CONFIG);
@@ -152,11 +200,13 @@ function spritePaths(name) {
   return {
     right: {
       idle: `./assets/character-sprites/${name}/idle_right.png`,
+      // Walk animation: 5 frames for smooth movement
       walk: Array.from({ length: 5 }, (_, index) => `./assets/character-sprites/${name}/walk_right_${index + 1}.png`),
       jump: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/jump_right_${index + 1}.png`)
     },
     left: {
       idle: `./assets/character-sprites/${name}/idle_left.png`,
+      // Walk animation: 5 frames (same as right for consistency)
       walk: Array.from({ length: 5 }, (_, index) => `./assets/character-sprites/${name}/walk_left_${index + 1}.png`),
       jump: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/jump_left_${index + 1}.png`)
     }
@@ -196,7 +246,13 @@ const controls = {
 };
 
 const game = {
-  screen: 'characterSelect',
+  screen: GAME_SCREENS.TITLE_SCREEN,
+  prevScreen:      null,
+  winBonus:        0,
+  gemsCollected:   0,
+  gameOverReason:  '',
+  overlayAlpha:    0,
+  overlayTimer:    0,
   selectedOptionIndex: 0,
   selectedCharacter: 'dad',
   score: 0,
@@ -206,6 +262,7 @@ const game = {
   comboPulse: 0,
   totalGems: 10,
   completed: false,
+  lives: 3,
   energy: 10,
   timer: 238,
   walkPhase: 0,
@@ -224,68 +281,32 @@ const game = {
   floatingTexts: []
 };
 
-const PLAYER_WALK_ACCEL = 1200;
-const PLAYER_RUN_ACCEL = 1900;
-const PLAYER_WALK_MAX_SPEED = 880;
-const PLAYER_RUN_MAX_SPEED = 1480;
-const PLAYER_DRAG = 0.86;
-const AIR_ACCEL = 1500;
-const AIR_MAX_SPEED = 2200;
-const AIR_DRAG = 0.985;
-const FOLLOWER_DRAG = 0.82;
-const GRAVITY = 4200;
-const JUMP_VELOCITY = 2200;
-const JUMP_FORWARD_BOOST = 220;
-const COYOTE_TIME = 0.08;
-const JUMP_BUFFER_TIME = 0.12;
-const FALL_RESET_Y = HEIGHT + 260;
-const SECTION_START_X = 220;
-const SECTION_END_X = LEVEL_SECTION_WIDTH - 180;
+// Physics constants (computed from config in applyConfig)
+let PLAYER_WALK_ACCEL = 1200;
+let PLAYER_RUN_ACCEL = 1900;
+let PLAYER_WALK_MAX_SPEED = 880;
+let PLAYER_RUN_MAX_SPEED = 1480;
+let PLAYER_DRAG = 0.86;
+let AIR_ACCEL = 1500;
+let AIR_MAX_SPEED = 2000;
+let AIR_DRAG = 0.985;
+let FOLLOWER_DRAG = 0.82;
+let GRAVITY = 4200;
+let JUMP_VELOCITY = 2200;
+let JUMP_FORWARD_BOOST = 220;
+let COYOTE_TIME = 0.08;
+let JUMP_BUFFER_TIME = 0.12;
+let FALL_RESET_Y_OFFSET = 260;
+let FALL_RESET_Y = HEIGHT + 260; // Default, updated in applyConfig
+let SECTION_START_X = 220;
+let SECTION_END_X_OFFSET = 180;
+let SECTION_END_X = LEVEL_SECTION_WIDTH - 180; // Default, updated in applyConfig
+let OVERLAY_FADE_SPEED = 4;
+let OVERLAY_MAX_ALPHA = 0.78;
 
-let formation = [
-  { key: 'dad', dx: 0, dy: 0, sprite: 'dad', scale: 1.58, speed: 1480, bob: 2.8 },
-  { key: 'mom', dx: 156, dy: 4, sprite: 'mom', scale: 1.52, speed: 1460, bob: 2.2 },
-  { key: 'kid', dx: 128, dy: 22, sprite: 'kid', scale: 1.40, speed: 1450, bob: 2.6 },
-  { key: 'teen', dx: 172, dy: 6, sprite: 'teen', scale: 1.54, speed: 1455, bob: 2.3 }
-];
+let formation = [];
 
-let characterOptions = [
-  {
-    key: 'dad',
-    label: 'PAPA',
-    color: '#32b4ea',
-    description: 'Forte e protettivo, sempre pronto all avventura',
-    stats: [6, 5, 4, 4]
-  },
-  {
-    key: 'mom',
-    label: 'MAMMA',
-    color: '#ff6f91',
-    description: 'Agile e precisa, tiene tutti sulla strada giusta',
-    stats: [5, 5, 4, 4]
-  },
-  {
-    key: 'kid',
-    label: 'FRATELLINO',
-    color: '#56de61',
-    description: 'Leggero e veloce, perfetto per superare i buchi',
-    stats: [4, 5, 4, 4]
-  },
-  {
-    key: 'teen',
-    label: 'FRATELLO',
-    color: '#ffbf38',
-    description: 'Equilibrato e pronto a guidare il gruppo',
-    stats: [5, 4, 4, 4]
-  },
-  {
-    key: 'family',
-    label: 'FAMIGLIA',
-    color: '#fff4ca',
-    description: 'Tutti insieme: il gioco usa l intero gruppo',
-    stats: [6, 6, 5, 6]
-  }
-];
+let characterOptions = [];
 
 let selectionHitBoxes = [];
 
@@ -295,6 +316,11 @@ function mergeConfig(loadedConfig) {
   }
   return {
     game: { ...DEFAULT_CONFIG.game, ...(loadedConfig.game || {}) },
+    physics: {
+      player: { ...DEFAULT_CONFIG.physics.player, ...(loadedConfig.physics?.player || {}) },
+      follower: { ...DEFAULT_CONFIG.physics.follower, ...(loadedConfig.physics?.follower || {}) }
+    },
+    display: { ...DEFAULT_CONFIG.display, ...(loadedConfig.display || {}) },
     characters: Array.isArray(loadedConfig.characters) && loadedConfig.characters.length
       ? loadedConfig.characters
       : DEFAULT_CONFIG.characters,
@@ -322,35 +348,67 @@ async function loadConfig() {
 function applyConfig(loadedConfig) {
   config = mergeConfig(loadedConfig);
   game.totalGems = Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
+  game.lives = Number(config.game.startLives) || DEFAULT_CONFIG.game.startLives;
   game.timer = Number(config.game.timerSeconds) || DEFAULT_CONFIG.game.timerSeconds;
   game.message = config.game.startMessage || DEFAULT_CONFIG.game.startMessage;
+  game.comboWindow = Number(config.game.comboWindow) || DEFAULT_CONFIG.game.comboWindow;
+  game.energyDepletionRate = Number(config.game.energyDepletionRate) || DEFAULT_CONFIG.game.energyDepletionRate;
+  game.energyRecoveryPerGem = Number(config.game.energyRecoveryPerGem) || DEFAULT_CONFIG.game.energyRecoveryPerGem;
+  game.energyLossOnFall = Number(config.game.energyLossOnFall) || DEFAULT_CONFIG.game.energyLossOnFall;
+  game.winBonusMultiplier = Number(config.game.winBonusMultiplier) || DEFAULT_CONFIG.game.winBonusMultiplier;
+  game.scoreMultiplier = Number(config.game.scoreMultiplier) || DEFAULT_CONFIG.game.scoreMultiplier;
+  game.pickupOffsetMultiplier = Number(config.game.pickupOffsetMultiplier) || DEFAULT_CONFIG.game.pickupOffsetMultiplier;
+  game.pickupRadiusMultiplier = Number(config.game.pickupRadiusMultiplier) || DEFAULT_CONFIG.game.pickupRadiusMultiplier;
+  game.floatingTextOffsetMultiplier = Number(config.game.floatingTextOffsetMultiplier) || DEFAULT_CONFIG.game.floatingTextOffsetMultiplier;
+
+  // Applica fisica player
+  PLAYER_WALK_ACCEL = Number(config.physics.player.walkAccel) || DEFAULT_CONFIG.physics.player.walkAccel;
+  PLAYER_RUN_ACCEL = Number(config.physics.player.runAccel) || DEFAULT_CONFIG.physics.player.runAccel;
+  PLAYER_WALK_MAX_SPEED = Number(config.physics.player.walkMaxSpeed) || DEFAULT_CONFIG.physics.player.walkMaxSpeed;
+  PLAYER_RUN_MAX_SPEED = Number(config.physics.player.runMaxSpeed) || DEFAULT_CONFIG.physics.player.runMaxSpeed;
+  PLAYER_DRAG = Number(config.physics.player.drag) || DEFAULT_CONFIG.physics.player.drag;
+  AIR_ACCEL = Number(config.physics.player.airAccel) || DEFAULT_CONFIG.physics.player.airAccel;
+  AIR_MAX_SPEED = Number(config.physics.player.airMaxSpeed) || DEFAULT_CONFIG.physics.player.airMaxSpeed;
+  AIR_DRAG = Number(config.physics.player.airDrag) || DEFAULT_CONFIG.physics.player.airDrag;
+  GRAVITY = Number(config.physics.player.gravity) || DEFAULT_CONFIG.physics.player.gravity;
+  JUMP_VELOCITY = Number(config.physics.player.jumpVelocity) || DEFAULT_CONFIG.physics.player.jumpVelocity;
+  JUMP_FORWARD_BOOST = Number(config.physics.player.jumpForwardBoost) || DEFAULT_CONFIG.physics.player.jumpForwardBoost;
+  COYOTE_TIME = Number(config.physics.player.coyoteTime) || DEFAULT_CONFIG.physics.player.coyoteTime;
+  JUMP_BUFFER_TIME = Number(config.physics.player.jumpBufferTime) || DEFAULT_CONFIG.physics.player.jumpBufferTime;
+  FALL_RESET_Y_OFFSET = Number(config.physics.player.fallResetYOffset) || DEFAULT_CONFIG.physics.player.fallResetYOffset;
+  FALL_RESET_Y = HEIGHT + FALL_RESET_Y_OFFSET;
+
+  // Applica fisica follower
+  FOLLOWER_DRAG = Number(config.physics.follower.drag) || DEFAULT_CONFIG.physics.follower.drag;
+
+  // Applica display
+  SECTION_START_X = Number(config.display.sectionStartX) || DEFAULT_CONFIG.display.sectionStartX;
+  SECTION_END_X_OFFSET = Number(config.display.sectionEndXOffset) || DEFAULT_CONFIG.display.sectionEndXOffset;
+  SECTION_END_X = LEVEL_SECTION_WIDTH - SECTION_END_X_OFFSET;
+  OVERLAY_FADE_SPEED = Number(config.display.overlayFadeSpeed) || DEFAULT_CONFIG.display.overlayFadeSpeed;
+  OVERLAY_MAX_ALPHA = Number(config.display.overlayMaxAlpha) || DEFAULT_CONFIG.display.overlayMaxAlpha;
 
   formation = config.characters.map((character, index) => {
-    const defaultCharacter = DEFAULT_CONFIG.characters[index] || DEFAULT_CONFIG.characters[0];
     const defaultFormation = DEFAULT_CONFIG.formation[index] || DEFAULT_CONFIG.formation[0];
     const placement = config.formation[index] || defaultFormation;
-    const meta = characterMeta[character.id] || characterMeta[defaultCharacter.id] || characterMeta.dad;
     return {
-      key: character.id || defaultCharacter.id,
+      key: character.id,
       dx: Number(placement.dx) || 0,
       dy: Number(placement.dy) || 0,
-      sprite: character.id || defaultCharacter.id,
-      scale: Number(character.scale) || defaultCharacter.scale,
-      speed: meta.speed,
-      bob: Number(character.bob) || defaultCharacter.bob
+      sprite: character.id,
+      scale: Number(character.scale) || 1.5,
+      speed: Number(character.speed) || 1450,
+      bob: Number(character.bob) || 2.5
     };
   });
 
-  characterOptions = config.characters.map((character) => {
-    const meta = characterMeta[character.id] || characterMeta.dad;
-    return {
-      key: character.id,
-      label: meta.label || String(character.name || character.id).toUpperCase(),
-      color: meta.color,
-      description: meta.description,
-      stats: meta.stats
-    };
-  });
+  characterOptions = config.characters.map((character) => ({
+    key: character.id,
+    label: character.label || String(character.name || character.id).toUpperCase(),
+    color: character.color || '#ffffff',
+    description: character.description || '',
+    stats: character.stats || [5, 5, 5, 5]
+  }));
   characterOptions.push({
     key: 'family',
     label: 'FAMIGLIA',
@@ -402,7 +460,7 @@ function setControlState(name, pressed) {
     return;
   }
   controls[name] = pressed;
-  if (name === 'jump' && pressed && game.screen !== 'characterSelect') {
+  if (name === 'jump' && pressed && game.screen !== GAME_SCREENS.CHARACTER_SELECT) {
     game.jumpBuffer = JUMP_BUFFER_TIME;
   }
   const button = document.querySelector(`#touch-controls [data-control="${name}"]`);
@@ -417,6 +475,7 @@ function bindTouchControls() {
     const name = button.getAttribute('data-control');
     button.addEventListener('pointerdown', (event) => {
       event.preventDefault();
+      if (audio.init) audio.init(); // Initialize audio on first touch
       button.setPointerCapture(event.pointerId);
       setControlState(name, true);
     });
@@ -425,6 +484,47 @@ function bindTouchControls() {
     button.addEventListener('pointercancel', release);
     button.addEventListener('lostpointercapture', release);
     button.addEventListener('contextmenu', (event) => event.preventDefault());
+  }
+}
+
+function bindPauseButton() {
+  const btn = document.getElementById('pause-btn');
+  if (!btn) return;
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (audio.init) audio.init(); // Initialize audio on first touch
+    btn.setPointerCapture(e.pointerId);
+    if (game.screen === GAME_SCREENS.PLAYING) {
+      setGameScreen(GAME_SCREENS.PAUSED);
+    } else if (game.screen === GAME_SCREENS.PAUSED) {
+      setGameScreen(GAME_SCREENS.PLAYING);
+    }
+  });
+}
+
+function bindRestartButton() {
+  const btn = document.getElementById('restart-btn');
+  if (!btn) return;
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (audio.init) audio.init(); // Initialize audio on first touch
+    btn.setPointerCapture(e.pointerId);
+    if (game.screen === GAME_SCREENS.GAMEOVER || game.screen === GAME_SCREENS.WIN) {
+      setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
+    }
+  });
+}
+
+function updateRestartButtonVisibility() {
+  const btn = document.getElementById('restart-btn');
+  if (!btn) return;
+  const shouldShow = game.screen === GAME_SCREENS.GAMEOVER || game.screen === GAME_SCREENS.WIN;
+  btn.style.display = shouldShow ? 'block' : 'none';
+  
+  // Show/hide pause button based on game state
+  const pauseBtn = document.getElementById('pause-btn');
+  if (pauseBtn) {
+    pauseBtn.style.display = shouldShow ? 'none' : 'block';
   }
 }
 
@@ -581,6 +681,7 @@ function getSpriteFrame(sprite, member) {
 
   if (Math.abs(member.vx) > 30 && states.walk.length) {
     const phase = game.walkPhase + member.bobPhase;
+    // Use walk.length dynamically so animation works with any number of frames
     const frameIndex = Math.floor(phase * 8) % states.walk.length;
     return states.walk[frameIndex] || states.idle;
   }
@@ -703,14 +804,51 @@ function placeFamilyAtSectionStart(sectionIndex) {
   updateCamera();
 }
 
+function setGameScreen(newScreen) {
+  game.prevScreen = game.screen;
+  game.screen = newScreen;
+  game.overlayAlpha = 0;
+  game.overlayTimer = 0;
+
+  switch (newScreen) {
+    case GAME_SCREENS.TITLE_SCREEN:
+      game.overlayAlpha = 0;
+      break;
+    case GAME_SCREENS.WIN:
+      game.winBonus = Math.round(game.timer) * game.winBonusMultiplier;
+      audio.win();
+      break;
+    case GAME_SCREENS.CHARACTER_SELECT:
+      game.score = 0;
+      game.gemsCollected = 0;
+      game.lives = Number(config.game.startLives) || DEFAULT_CONFIG.game.startLives;
+      game.completed = false;
+      game.overlayAlpha = 0;
+      break;
+    case GAME_SCREENS.PLAYING:
+      if (game.prevScreen === GAME_SCREENS.CHARACTER_SELECT) {
+        resetGame();
+        lastTime = 0;
+      }
+      break;
+  }
+
+  // Update button visibility based on new screen state
+  updateRestartButtonVisibility();
+}
+
 function resetGame() {
   game.score = 0;
+  game.gemsCollected = 0;
+  game.winBonus = 0;
+  game.gameOverReason = '';
   game.combo = 0;
   game.comboTimer = 0;
   game.comboPulse = 0;
   game.floatingTexts = [];
   game.totalGems = Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
   game.completed = false;
+  game.lives = Number(config.game.startLives) || DEFAULT_CONFIG.game.startLives;
   game.energy = 10;
   game.timer = Number(config.game.timerSeconds) || DEFAULT_CONFIG.game.timerSeconds;
   game.message = config.game.startMessage || DEFAULT_CONFIG.game.startMessage;
@@ -723,11 +861,10 @@ function resetGame() {
 }
 
 function confirmCharacterSelection() {
+  if (audio.init) audio.init(); // Initialize audio on first interaction
   const selected = characterOptions[game.selectedOptionIndex] || characterOptions[0];
   game.selectedCharacter = selected.key;
-  game.screen = 'play';
-  resetGame();
-  lastTime = 0;
+  setGameScreen(GAME_SCREENS.PLAYING);
 }
 
 function moveCharacterSelection(direction) {
@@ -880,7 +1017,7 @@ function getSectionStars(sectionIndex = game.currentSection) {
 
 function getHudMessage() {
   if (game.completed) {
-    return game.score >= game.totalGems ? 'Tutte le stelle raccolte' : 'Schermata completata';
+    return game.gemsCollected >= game.totalGems ? 'Tutte le stelle raccolte' : 'Schermata completata';
   }
   if (game.timer <= 0) {
     return 'Tempo terminato';
@@ -898,14 +1035,16 @@ function drawHUD(t) {
   pxText(`AREA ${game.currentSection + 1}/${LEVEL_SEGMENTS.length}`, 40, 24, '#bfe7ff', 0.98);
   pxText(`QUI ${sectionTaken}/${sectionStars.length}`, 44, 98, '#fff7b8', 0.68);
 
-  pxText(`STELLE ${game.score}/${game.totalGems}`, 388, 24, '#ffe66d', 0.98, 'center');
+  pxText(`STELLE ${game.gemsCollected}/${game.totalGems}`, 388, 24, '#ffe66d', 0.98, 'center');
   pxText(game.completed ? 'COMPLETATO' : 'RACCOGLI', 388, 98, game.completed ? '#8dff8f' : '#ffffff', 0.68, 'center');
 
   pxText(formatTimer(game.timer), 652, 22, game.timer < 30 ? '#ff7979' : '#ffffff', 1.12, 'center');
   pxText('TEMPO', 652, 102, '#bfe7ff', 0.62, 'center');
 
-  pxText('ENERGIA', 804, 28, '#8dff8f', 0.72);
-  drawBar(804, 96, 230, 34, game.energy / 10, palette.energy, '#28422d');
+  pxText('VITE', 804, 28, '#ff6b8a', 0.72);
+  for (let i = 0; i < game.lives; i++) {
+    pxText('♥', 804 + i * 38, 86, palette.heart, 0.95, 'center');
+  }
 
   if (game.combo >= 2) {
     const pulseScale = 0.85 + game.comboPulse * 1.2;
@@ -926,7 +1065,9 @@ function drawCenterPanel() {
 
 function drawBottomPanels() {
   const player = game.family[0];
+  const scoreDisplay = game.score * game.scoreMultiplier;
   const distanceRatio = clamp((player.x - SECTION_START_X) / Math.max(1, SECTION_END_X - SECTION_START_X), 0, 1);
+  pxText(`PUNTI ${String(scoreDisplay).padStart(4, '0')}`, 952, 1394, '#ffe66d', 0.68, 'center');
   const jumpState = player.grounded ? 'SALTO PRONTO' : 'IN ARIA';
   const nextGoal = game.currentSection < LEVEL_SEGMENTS.length - 1 ? 'RAGGIUNGI IL BORDO DESTRO' : 'RAGGIUNGI IL TRAGUARDO';
 
@@ -940,7 +1081,6 @@ function drawBottomPanels() {
   pxText('SPAZIO SALTA  SHIFT CORRI', 690, 1394, '#ffffff', 0.48, 'center');
 
   pxText('R RESET', 952, 1328, '#bfe7ff', 0.62, 'center');
-  pxText(`PUNTI ${String(game.score * 150).padStart(4, '0')}`, 952, 1394, '#ffe66d', 0.68, 'center');
 }
 
 function drawSelectionSprite(spriteKey, x, y, scale = 2.4) {
@@ -990,6 +1130,56 @@ function drawCharacterCard(option, index, x, y, w, h) {
   }
 
   selectionHitBoxes[index] = { x, y, w, h };
+}
+
+function drawTitleScreen(t) {
+  // Draw background sky
+  drawSkyParallax(t * 0.03);
+  drawHillsAndTown(0);
+
+  // Dark overlay
+  const alpha = 0.6 + Math.sin(t * 0.003) * 0.1;
+  pixelRect(0, 0, WIDTH, HEIGHT, `rgba(0, 0, 0, ${alpha})`);
+
+  const cx = WIDTH / 2;
+
+  // Title with glow effect
+  const titlePulse = 1 + Math.sin(t * 0.004) * 0.05;
+  
+  // Title shadow
+  pxText('FAMILY GAME', cx + 4, 384, '#000000', 2.2 * titlePulse, 'center');
+  // Main title
+  pxText('FAMILY GAME', cx, 380, palette.gold1, 2.2 * titlePulse, 'center');
+  
+  // Subtitle
+  pxText('Una storia di famiglia', cx, 520, '#ffffff', 1.1, 'center');
+
+  // Decorative line
+  pixelRect(cx - 280, 580, 560, 4, palette.gold1);
+  pixelRect(cx - 200, 590, 400, 2, '#ffe66d');
+
+  // Instructions box
+  pixelRect(cx - 320, 700, 640, 340, '#020816');
+  pixelRect(cx - 320, 696, 640, 8, palette.gold1);
+  pixelRect(cx - 320, 1032, 640, 8, palette.gold1);
+
+  // Instructions text
+  pxText('COME GIOCARE', cx, 750, '#ffe66d', 0.9, 'center');
+  
+  pxText('◀ ▶  Muovi a sinistra/destra', cx, 830, '#bfe7ff', 0.72, 'center');
+  pxText('▲  o  SPAZIO  —  Salta', cx, 900, '#bfe7ff', 0.72, 'center');
+  pxText('⚡  o  SHIFT  —  Corri', cx, 970, '#bfe7ff', 0.72, 'center');
+  pxText('ESC  —  Pausa', cx, 1040, '#bfe7ff', 0.72, 'center');
+
+  // Start prompt with blinking effect
+  const blinkAlpha = 0.5 + Math.sin(t * 0.006) * 0.5;
+  if (blinkAlpha > 0.3) {
+    pixelRect(cx - 240, 1140, 480, 80, `rgba(26, 160, 80, ${blinkAlpha * 0.3})`);
+    pxText('TOCCA PER INIZIARE', cx, 1180, '#8dff8f', 0.95 * titlePulse, 'center');
+  }
+
+  // Version info
+  pxText('v1.0', cx, 1380, '#4a5568', 0.5, 'center');
 }
 
 function drawCharacterSelection(t) {
@@ -1108,7 +1298,14 @@ function drawWorld(cameraX, t) {
 }
 
 function updateGame(dt) {
-  if (game.screen === 'characterSelect') {
+  // Aggiorna overlayAlpha per stati con overlay
+  if (game.screen !== GAME_SCREENS.PLAYING &&
+      game.screen !== GAME_SCREENS.CHARACTER_SELECT) {
+    game.overlayTimer += dt;
+    game.overlayAlpha = Math.min(1, game.overlayTimer * OVERLAY_FADE_SPEED);
+  }
+  // Freeze fisica per stati non-PLAYING
+  if (game.screen !== GAME_SCREENS.PLAYING) {
     return;
   }
   if (game.completed) {
@@ -1116,7 +1313,6 @@ function updateGame(dt) {
   }
 
   game.timer = Math.max(0, game.timer - dt);
-  game.energy = Math.max(0, game.energy - dt * 0.03);
   if (game.comboTimer > 0) {
     game.comboTimer = Math.max(0, game.comboTimer - dt);
   } else {
@@ -1125,9 +1321,10 @@ function updateGame(dt) {
   game.comboPulse = Math.max(0, game.comboPulse - dt);
   updateFloatingTexts(dt);
 
-  if (game.timer === 0 && !game.completed) {
-    game.message = 'Tempo terminato, premi R per riprovare';
-    game.showCenterMessage = true;
+  if (game.timer <= 0 && !game.completed) {
+    game.gameOverReason = 'timer';
+    setGameScreen(GAME_SCREENS.GAMEOVER);
+    return;
   }
 
   const player = game.family[0];
@@ -1204,12 +1401,8 @@ function updateGame(dt) {
       return;
     }
     game.completed = true;
-    game.message = 'Ultima schermata completata';
-    game.showCenterMessage = true;
-    audio.win();
-    player.x = SECTION_END_X;
-    player.vx = 0;
-    updateCamera();
+    setGameScreen(GAME_SCREENS.WIN);
+    return;
   }
 
   let needsRespawn = false;
@@ -1245,8 +1438,13 @@ function updateGame(dt) {
   }
 
   if (needsRespawn) {
-    game.energy = Math.max(0, game.energy - 1);
+    game.lives -= 1;
     audio.fall();
+    if (game.lives <= 0) {
+      game.gameOverReason = 'lives';
+      setGameScreen(GAME_SCREENS.GAMEOVER);
+      return;
+    }
     respawnFamilyAtCheckpoint();
     return;
   }
@@ -1255,48 +1453,176 @@ function updateGame(dt) {
     if (item.taken || item.section !== game.currentSection) {
       continue;
     }
-    const pickupOffset = player.scale * 70;
-    const pickupRadius = player.scale * 75;
+    const pickupOffset = player.scale * game.pickupOffsetMultiplier;
+    const pickupRadius = player.scale * game.pickupRadiusMultiplier;
     const playerPickup = { x: player.x, y: player.y - pickupOffset };
     if (dist2(item, playerPickup) < pickupRadius ** 2) {
       item.taken = true;
+      game.gemsCollected += 1;          // ← conta stelle fisiche
       game.comboTimer = game.comboWindow;
       game.combo += 1;
       game.comboPulse = 0.22;
       const multiplier = Math.min(game.combo, 5);
-      game.score += multiplier;
-      addFloatingText(`+1 x${multiplier}`, player.x, player.y - player.scale * 150, palette.gold1);
-      game.energy = Math.min(10, game.energy + 1);
+      game.score += multiplier;         // ← punteggio con bonus combo
+      addFloatingText(`+1 x${multiplier}`, player.x, player.y - player.scale * game.floatingTextOffsetMultiplier, palette.gold1);
+      game.energy = Math.min(10, game.energy + game.energyRecoveryPerGem); // Legacy, no longer used
       audio.collectStar();
-      if (game.score >= game.totalGems) {
+      if (game.gemsCollected >= game.totalGems) {   // ← condizione su stelle fisiche
         game.completed = true;
-        game.message = 'Missione completata';
-        game.showCenterMessage = true;
-        audio.win();
+        setGameScreen(GAME_SCREENS.WIN);
+        return;
       }
     }
   }
 
-  if (!game.completed && game.score < game.totalGems && game.timer > 0 && player.grounded) {
+  if (!game.completed && game.gemsCollected < game.totalGems && game.timer > 0 && player.grounded) {
     game.message = 'Raccogli le stelle lungo il percorso';
     game.showCenterMessage = false;
   }
+}
+
+function drawOverlay(alpha, color = '#000000') {
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.78;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawPauseOverlay() {
+  drawOverlay(game.overlayAlpha, '#000818');
+  const cx = WIDTH / 2;
+
+  pixelRect(cx - 340, 540, 680, 360, '#020816');
+  pixelRect(cx - 340, 536, 680, 8, palette.hudLine);
+  pixelRect(cx - 340, 892, 680, 8, palette.hudLine);
+
+  pxText('IN PAUSA', cx, 580, '#bfe7ff', 1.6, 'center');
+
+  pxText(`STELLE  ${game.gemsCollected}/${game.totalGems}`, cx, 710, palette.gold1, 0.8, 'center');
+  pxText(`TEMPO   ${formatTimer(game.timer)}`, cx, 780, '#ffffff', 0.8, 'center');
+  const finalWinBonusDisplay = game.score * game.scoreMultiplier;
+  pxText(String(finalWinBonusDisplay).padStart(5, '0'), cx, 850, '#ffe66d', 0.8, 'center');
+
+  pixelRect(cx - 320, 930, 640, 130, '#07152a');
+  pxText('ESC — RIPRENDI', cx, 950, '#8dff8f', 0.72, 'center');
+  pxText('R — MENU PRINCIPALE', cx, 1018, '#ff9f9f', 0.72, 'center');
+}
+
+function drawGameOverOverlay(t) {
+  drawOverlay(game.overlayAlpha, '#1a0000');
+  const cx = WIDTH / 2;
+
+  const pulse = 0.9 + Math.sin(t * 0.004) * 0.08;
+  pxText('GAME OVER', cx, 480, palette.heart, 2.0 * pulse, 'center');
+
+  const reason = game.gameOverReason === 'timer'
+    ? 'IL TEMPO È SCADUTO'
+    : game.gameOverReason === 'lives'
+    ? 'HAI ESAURITO LE VITE'
+    : 'GAME OVER';
+  pxText(reason, cx, 660, '#ff9f9f', 0.78, 'center');
+
+  pixelRect(cx - 300, 740, 600, 340, '#020816');
+  pixelRect(cx - 300, 736, 600, 8, palette.heart);
+  pixelRect(cx - 300, 1072, 600, 8, palette.heart);
+
+  pxText('STELLE RACCOLTE', cx, 770, '#bfe7ff', 0.64, 'center');
+  pxText(`${game.gemsCollected} / ${game.totalGems}`, cx, 830, palette.gold1, 1.1, 'center');
+
+  pxText('PUNTEGGIO', cx, 920, '#bfe7ff', 0.64, 'center');
+  const winBonusDisplay = game.score * game.scoreMultiplier;
+  pxText(String(winBonusDisplay).padStart(5, '0'), cx, 980, '#ffe66d', 1.1, 'center');
+
+  pixelRect(cx - 280, 1110, 560, 100, '#3d0a0a');
+  pixelRect(cx - 268, 1122, 536, 76, '#7a1212');
+  pxText('R — RIGIOCA', cx, 1138, '#ffffff', 0.82, 'center');
+}
+
+function drawWinOverlay(t) {
+  drawOverlay(game.overlayAlpha, '#001208');
+  const cx = WIDTH / 2;
+
+  const pulse = 0.95 + Math.sin(t * 0.005) * 0.06;
+  pxText('MISSIONE', cx, 390, palette.gold1, 1.7 * pulse, 'center');
+  pxText('COMPLETATA!', cx, 510, palette.energy, 1.5 * pulse, 'center');
+
+  pixelRect(cx - 340, 640, 680, 460, '#020816');
+  pixelRect(cx - 340, 636, 680, 8, palette.energy);
+  pixelRect(cx - 340, 1092, 680, 8, palette.energy);
+
+  pxText('STELLE',       cx - 260, 672, '#bfe7ff', 0.64);
+  pxText(`${game.gemsCollected}/${game.totalGems}`, cx + 80, 672, palette.gold1, 0.9);
+
+  pxText('PUNTEGGIO',    cx - 260, 752, '#bfe7ff', 0.64);
+  const gameOverScoreDisplay = game.score * game.scoreMultiplier;
+  pxText(String(gameOverScoreDisplay).padStart(5, '0'), cx + 80, 752, '#ffe66d', 0.9);
+
+  pxText('BONUS TEMPO',  cx - 260, 832, '#bfe7ff', 0.64);
+  pxText(`+${String(game.winBonus).padStart(4, '0')}`, cx + 80, 832, palette.energy, 0.9);
+
+  pixelRect(cx - 300, 930, 600, 4, '#334455');
+
+  const totalScore = game.score * game.scoreMultiplier + game.winBonus;
+  pxText('TOTALE',       cx - 260, 960, '#ffffff', 0.8);
+  pxText(String(totalScore).padStart(6, '0'), cx + 80, 960, palette.gold2, 1.0);
+
+  // Rating 1-3 stelle basato su gemsCollected
+  const starRating = game.gemsCollected >= game.totalGems ? 3
+    : game.gemsCollected >= Math.ceil(game.totalGems * 0.7) ? 2
+    : 1;
+  for (let i = 0; i < 3; i++) {
+    pxText('★', cx - 80 + i * 76, 1020, i < starRating ? palette.gold1 : '#334455', 0.9, 'center');
+  }
+
+  pixelRect(cx - 280, 1120, 560, 100, '#0b3018');
+  pixelRect(cx - 268, 1132, 536, 76, '#168f35');
+  pxText('R — GIOCA ANCORA', cx, 1148, '#ffffff', 0.76, 'center');
 }
 
 function renderScene(t) {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.imageSmoothingEnabled = false;
 
-  if (game.screen === 'characterSelect') {
-    drawCharacterSelection(t);
-    return;
-  }
+  switch (game.screen) {
+    case GAME_SCREENS.TITLE_SCREEN:
+      drawTitleScreen(t);
+      break;
 
-  drawWorld(game.cameraX, t);
-  drawCenterPanel();
-  drawSparkles(t);
-  drawBottomPanels(t);
-  drawHUD(t);
+    case GAME_SCREENS.CHARACTER_SELECT:
+      drawCharacterSelection(t);
+      break;
+
+    case GAME_SCREENS.PLAYING:
+      drawWorld(game.cameraX, t);
+      drawCenterPanel();
+      drawSparkles(t);
+      drawBottomPanels();
+      drawHUD(t);
+      break;
+
+    case GAME_SCREENS.PAUSED:
+      drawWorld(game.cameraX, t);
+      drawCenterPanel();
+      drawSparkles(t);
+      drawBottomPanels();
+      drawHUD(t);
+      drawPauseOverlay();
+      break;
+
+    case GAME_SCREENS.GAMEOVER:
+      drawWorld(game.cameraX, t);
+      drawHUD(t);
+      drawGameOverOverlay(t);
+      break;
+
+    case GAME_SCREENS.WIN:
+      drawWorld(game.cameraX, t);
+      drawHUD(t);
+      drawWinOverlay(t);
+      break;
+  }
 }
 
 function render(t) {
@@ -1308,8 +1634,17 @@ function render(t) {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (audio.init) audio.init(); // Initialize audio on first keypress
   const key = e.key.toLowerCase();
-  if (game.screen === 'characterSelect') {
+  
+  // Handle title screen - any key starts the game
+  if (game.screen === GAME_SCREENS.TITLE_SCREEN) {
+    e.preventDefault();
+    setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
+    return;
+  }
+  
+  if (game.screen === GAME_SCREENS.CHARACTER_SELECT) {
     if (key === 'arrowleft' || key === 'a') {
       e.preventDefault();
       moveCharacterSelection(-1);
@@ -1320,6 +1655,39 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       confirmCharacterSelection();
     }
+    return;
+  }
+
+  if (game.screen === GAME_SCREENS.PAUSED) {
+    if (key === 'escape') {
+      e.preventDefault();
+      setGameScreen(GAME_SCREENS.PLAYING);
+    } else if (key === 'r') {
+      e.preventDefault();
+      setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
+    }
+    return;
+  }
+
+  if (game.screen === GAME_SCREENS.GAMEOVER) {
+    if (key === 'r') {
+      e.preventDefault();
+      setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
+    }
+    return;
+  }
+
+  if (game.screen === GAME_SCREENS.WIN) {
+    if (key === 'r') {
+      e.preventDefault();
+      setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
+    }
+    return;
+  }
+
+  if (key === 'escape') {
+    e.preventDefault();
+    setGameScreen(GAME_SCREENS.PAUSED);
     return;
   }
 
@@ -1344,7 +1712,7 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
   const key = e.key.toLowerCase();
-  if (game.screen === 'characterSelect') {
+  if (game.screen === GAME_SCREENS.CHARACTER_SELECT) {
     return;
   }
 
@@ -1364,7 +1732,16 @@ window.addEventListener('keyup', (e) => {
 });
 
 canvas.addEventListener('pointerdown', (event) => {
-  if (game.screen !== 'characterSelect') {
+  if (audio.init) audio.init(); // Initialize audio on first interaction
+  
+  // Handle title screen - tap to start
+  if (game.screen === GAME_SCREENS.TITLE_SCREEN) {
+    event.preventDefault();
+    setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
+    return;
+  }
+  
+  if (game.screen !== GAME_SCREENS.CHARACTER_SELECT) {
     return;
   }
   const rect = canvas.getBoundingClientRect();
@@ -1388,6 +1765,8 @@ canvas.addEventListener('pointerdown', (event) => {
 Promise.all([loadConfig(), loadSprites(), loadLevelBackground(), loadTerrainData()]).then(([loadedConfig]) => {
   applyConfig(loadedConfig);
   bindTouchControls();
+  bindPauseButton();
+  bindRestartButton();
   resetGame();
   requestAnimationFrame(render);
 });

@@ -3,6 +3,11 @@ class AudioManager {
     this.ctx = null;
   }
 
+  // Initialize audio context (must be called on user interaction)
+  init() {
+    return this._init();
+  }
+
   _init() {
     if (!this.ctx) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;

@@ -47,14 +47,14 @@
       #touch-controls {
         display: none;
         position: fixed;
-        left: 16px;
-        bottom: 16px;
-        grid-template-columns: repeat(3, 96px);
-        grid-template-rows: 96px;
-        gap: 10px;
-        padding: 12px;
+        left: 12px;
+        bottom: 12px;
+        grid-template-columns: repeat(3, 72px) 56px 56px;
+        grid-template-rows: 72px;
+        gap: 8px;
+        padding: 10px;
         border: 1px solid rgba(141, 165, 190, 0.3);
-        border-radius: 20px;
+        border-radius: 16px;
         background: rgba(0, 14, 31, 0.55);
         backdrop-filter: blur(6px);
         touch-action: none;
@@ -67,18 +67,18 @@
       }
       #touch-controls button {
         border: 1px solid #6c7b99;
-        border-radius: 16px;
+        border-radius: 14px;
         background: linear-gradient(180deg, #1b3f6d, #102846);
         color: #f4f6ff;
-        font: 700 34px/1 monospace;
-        box-shadow: 0 4px 0 #08101f;
+        font: 700 26px/1 monospace;
+        box-shadow: 0 3px 0 #08101f;
         touch-action: none;
         user-select: none;
       }
       #touch-controls button:active,
       #touch-controls button.active {
         transform: translateY(2px);
-        box-shadow: 0 2px 0 #08101f;
+        box-shadow: 0 1px 0 #08101f;
         background: linear-gradient(180deg, #2b6eab, #17365f);
       }
       #touch-controls .left {
@@ -90,6 +90,22 @@
       #touch-controls .jump {
         grid-column: 3;
       }
+      #touch-controls .run {
+        grid-column: 4;
+        font-size: 22px;
+      }
+      #touch-controls .pause-btn {
+        grid-column: 5;
+        font-size: 18px;
+        background: linear-gradient(180deg, #2a1b3d, #18102a);
+        border-color: #8850d0;
+      }
+      #touch-controls .restart-btn {
+        grid-column: 5;
+        font-size: 24px;
+        background: linear-gradient(180deg, #3d1b1b, #2a1010);
+        border-color: #d05050;
+      }
     </style>
   </head>
   <body>
@@ -99,6 +115,9 @@
       <button class="left" type="button" data-control="left" aria-label="Muovi a sinistra">◀</button>
       <button class="right" type="button" data-control="right" aria-label="Muovi a destra">▶</button>
       <button class="jump" type="button" data-control="jump" aria-label="Salta">▲</button>
+      <button class="run" type="button" data-control="run" aria-label="Corri">⚡</button>
+      <button class="pause-btn" type="button" id="pause-btn" aria-label="Pausa">⏸</button>
+      <button class="restart-btn" type="button" id="restart-btn" aria-label="Ricomincia" style="display: none;">🔄</button>
     </div>
     <script type="module" src="./main.js"></script>
   </body>
