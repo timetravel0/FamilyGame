@@ -1,0 +1,33 @@
+{
+  "game": {
+    "title": "Family Game",
+    "subtitle": "Una storia di famiglia",
+    "totalGems": 10,
+    "timerSeconds": 238,
+    "startMessage": "Corri verso destra e raccogli le stelle"
+  },
+  "characters": [
+    { "id": "dad", "name": "Papà", "scale": 1.58, "bob": 2.8, "isPlayer": true },
+    { "id": "mom", "name": "Mamma", "scale": 1.52, "bob": 2.2, "isPlayer": false },
+    { "id": "kid", "name": "Bimbo", "scale": 1.40, "bob": 2.6, "isPlayer": false },
+    { "id": "teen", "name": "Teen", "scale": 1.54, "bob": 2.3, "isPlayer": false }
+  ],
+  "formation": [
+    { "dx": 0, "dy": 0 },
+    { "dx": 156, "dy": 4 },
+    { "dx": 128, "dy": 22 },
+    { "dx": 172, "dy": 6 }
+  ],
+  "collectibles": [
+    { "section": 0, "x": 220, "y": 954 },
+    { "section": 0, "x": 520, "y": 928 },
+    { "section": 0, "x": 840, "y": 982 },
+    { "section": 0, "x": 1260, "y": 950 },
+    { "section": 1, "x": 164, "y": 936 },
+    { "section": 1, "x": 604, "y": 990 },
+    { "section": 1, "x": 1084, "y": 958 },
+    { "section": 2, "x": 28, "y": 984 },
+    { "section": 2, "x": 628, "y": 944 },
+    { "section": 2, "x": 1288, "y": 970 }
+  ]
+}

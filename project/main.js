@@ -1,3 +1,5 @@
+import { audio } from './audio.js';
+
 const WIDTH = 1080;
 const HEIGHT = 1440;
 const canvas = document.getElementById('game');
@@ -103,6 +105,49 @@ const TERRAIN_STORAGE_KEY = 'familygame-terrain';
 let TERRAIN_PROFILES = DEFAULT_TERRAIN_PROFILES.map((section) => section.map((point) => ({ ...point })));
 let TERRAIN_SOLID_SPANS = DEFAULT_TERRAIN_SOLID_SPANS.map((section) => section.map((span) => ({ ...span })));
 
+const DEFAULT_CONFIG = {
+  game: {
+    title: 'Family Game',
+    subtitle: 'Una storia di famiglia',
+    totalGems: 10,
+    timerSeconds: 238,
+    startMessage: 'Corri verso destra e raccogli le stelle'
+  },
+  characters: [
+    { id: 'dad', name: 'Papà', scale: 1.58, bob: 2.8, isPlayer: true },
+    { id: 'mom', name: 'Mamma', scale: 1.52, bob: 2.2, isPlayer: false },
+    { id: 'kid', name: 'Bimbo', scale: 1.40, bob: 2.6, isPlayer: false },
+    { id: 'teen', name: 'Teen', scale: 1.54, bob: 2.3, isPlayer: false }
+  ],
+  formation: [
+    { dx: 0, dy: 0 },
+    { dx: 156, dy: 4 },
+    { dx: 128, dy: 22 },
+    { dx: 172, dy: 6 }
+  ],
+  collectibles: [
+    { section: 0, x: 220, y: 954 },
+    { section: 0, x: 520, y: 928 },
+    { section: 0, x: 840, y: 982 },
+    { section: 0, x: 1260, y: 950 },
+    { section: 1, x: 164, y: 936 },
+    { section: 1, x: 604, y: 990 },
+    { section: 1, x: 1084, y: 958 },
+    { section: 2, x: 28, y: 984 },
+    { section: 2, x: 628, y: 944 },
+    { section: 2, x: 1288, y: 970 }
+  ]
+};
+
+const characterMeta = {
+  dad: { label: 'PAPA', color: '#32b4ea', description: 'Forte e protettivo, sempre pronto all avventura', stats: [6, 5, 4, 4], speed: 1480 },
+  mom: { label: 'MAMMA', color: '#ff6f91', description: 'Agile e precisa, tiene tutti sulla strada giusta', stats: [5, 5, 4, 4], speed: 1460 },
+  kid: { label: 'FRATELLINO', color: '#56de61', description: 'Leggero e veloce, perfetto per superare i buchi', stats: [4, 5, 4, 4], speed: 1450 },
+  teen: { label: 'FRATELLO', color: '#ffbf38', description: 'Equilibrato e pronto a guidare il gruppo', stats: [5, 4, 4, 4], speed: 1455 }
+};
+
+let config = structuredClone(DEFAULT_CONFIG);
+
 function spritePaths(name) {
   return {
     right: {
@@ -112,7 +157,7 @@ function spritePaths(name) {
     },
     left: {
       idle: `./assets/character-sprites/${name}/idle_left.png`,
-      walk: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/walk_left_${index + 1}.png`),
+      walk: Array.from({ length: 5 }, (_, index) => `./assets/character-sprites/${name}/walk_left_${index + 1}.png`),
       jump: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/jump_left_${index + 1}.png`)
     }
   };
@@ -144,13 +189,21 @@ let lastTime = 0;
 const controls = {
   left: false,
   right: false,
+  run: false,
   jump: false,
   up: false,
   down: false
 };
 
 const game = {
+  screen: 'characterSelect',
+  selectedOptionIndex: 0,
+  selectedCharacter: 'dad',
   score: 0,
+  combo: 0,
+  comboTimer: 0,
+  comboWindow: 2.5,
+  comboPulse: 0,
   totalGems: 10,
   completed: false,
   energy: 10,
@@ -162,13 +215,19 @@ const game = {
   checkpointSection: 0,
   checkpointX: 220,
   jumpLock: false,
+  jumpBuffer: 0,
   message: 'Corri verso destra e raccogli le stelle',
+  showCenterMessage: false,
+  lastCheckpointSoundX: 220,
   family: [],
-  collectibles: []
+  collectibles: [],
+  floatingTexts: []
 };
 
-const PLAYER_ACCEL = 1900;
-const PLAYER_MAX_SPEED = 1480;
+const PLAYER_WALK_ACCEL = 1200;
+const PLAYER_RUN_ACCEL = 1900;
+const PLAYER_WALK_MAX_SPEED = 880;
+const PLAYER_RUN_MAX_SPEED = 1480;
 const PLAYER_DRAG = 0.86;
 const AIR_ACCEL = 1500;
 const AIR_MAX_SPEED = 2200;
@@ -177,16 +236,129 @@ const FOLLOWER_DRAG = 0.82;
 const GRAVITY = 4200;
 const JUMP_VELOCITY = 2200;
 const JUMP_FORWARD_BOOST = 220;
+const COYOTE_TIME = 0.08;
+const JUMP_BUFFER_TIME = 0.12;
 const FALL_RESET_Y = HEIGHT + 260;
 const SECTION_START_X = 220;
 const SECTION_END_X = LEVEL_SECTION_WIDTH - 180;
 
-const formation = [
-  { dx: 0, dy: 0, sprite: 'dad', scale: 1.58, speed: 1480, bob: 2.8 },
-  { dx: 156, dy: 4, sprite: 'mom', scale: 1.52, speed: 1460, bob: 2.2 },
-  { dx: 128, dy: 22, sprite: 'kid', scale: 1.40, speed: 1450, bob: 2.6 },
-  { dx: 172, dy: 6, sprite: 'teen', scale: 1.54, speed: 1455, bob: 2.3 }
+let formation = [
+  { key: 'dad', dx: 0, dy: 0, sprite: 'dad', scale: 1.58, speed: 1480, bob: 2.8 },
+  { key: 'mom', dx: 156, dy: 4, sprite: 'mom', scale: 1.52, speed: 1460, bob: 2.2 },
+  { key: 'kid', dx: 128, dy: 22, sprite: 'kid', scale: 1.40, speed: 1450, bob: 2.6 },
+  { key: 'teen', dx: 172, dy: 6, sprite: 'teen', scale: 1.54, speed: 1455, bob: 2.3 }
 ];
+
+let characterOptions = [
+  {
+    key: 'dad',
+    label: 'PAPA',
+    color: '#32b4ea',
+    description: 'Forte e protettivo, sempre pronto all avventura',
+    stats: [6, 5, 4, 4]
+  },
+  {
+    key: 'mom',
+    label: 'MAMMA',
+    color: '#ff6f91',
+    description: 'Agile e precisa, tiene tutti sulla strada giusta',
+    stats: [5, 5, 4, 4]
+  },
+  {
+    key: 'kid',
+    label: 'FRATELLINO',
+    color: '#56de61',
+    description: 'Leggero e veloce, perfetto per superare i buchi',
+    stats: [4, 5, 4, 4]
+  },
+  {
+    key: 'teen',
+    label: 'FRATELLO',
+    color: '#ffbf38',
+    description: 'Equilibrato e pronto a guidare il gruppo',
+    stats: [5, 4, 4, 4]
+  },
+  {
+    key: 'family',
+    label: 'FAMIGLIA',
+    color: '#fff4ca',
+    description: 'Tutti insieme: il gioco usa l intero gruppo',
+    stats: [6, 6, 5, 6]
+  }
+];
+
+let selectionHitBoxes = [];
+
+function mergeConfig(loadedConfig) {
+  if (!loadedConfig) {
+    return structuredClone(DEFAULT_CONFIG);
+  }
+  return {
+    game: { ...DEFAULT_CONFIG.game, ...(loadedConfig.game || {}) },
+    characters: Array.isArray(loadedConfig.characters) && loadedConfig.characters.length
+      ? loadedConfig.characters
+      : DEFAULT_CONFIG.characters,
+    formation: Array.isArray(loadedConfig.formation) && loadedConfig.formation.length
+      ? loadedConfig.formation
+      : DEFAULT_CONFIG.formation,
+    collectibles: Array.isArray(loadedConfig.collectibles) && loadedConfig.collectibles.length
+      ? loadedConfig.collectibles
+      : DEFAULT_CONFIG.collectibles
+  };
+}
+
+async function loadConfig() {
+  try {
+    const res = await fetch('./assets/config.json', { cache: 'no-store' });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Keep local defaults when the config cannot be fetched.
+  }
+  return null;
+}
+
+function applyConfig(loadedConfig) {
+  config = mergeConfig(loadedConfig);
+  game.totalGems = Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
+  game.timer = Number(config.game.timerSeconds) || DEFAULT_CONFIG.game.timerSeconds;
+  game.message = config.game.startMessage || DEFAULT_CONFIG.game.startMessage;
+
+  formation = config.characters.map((character, index) => {
+    const defaultCharacter = DEFAULT_CONFIG.characters[index] || DEFAULT_CONFIG.characters[0];
+    const defaultFormation = DEFAULT_CONFIG.formation[index] || DEFAULT_CONFIG.formation[0];
+    const placement = config.formation[index] || defaultFormation;
+    const meta = characterMeta[character.id] || characterMeta[defaultCharacter.id] || characterMeta.dad;
+    return {
+      key: character.id || defaultCharacter.id,
+      dx: Number(placement.dx) || 0,
+      dy: Number(placement.dy) || 0,
+      sprite: character.id || defaultCharacter.id,
+      scale: Number(character.scale) || defaultCharacter.scale,
+      speed: meta.speed,
+      bob: Number(character.bob) || defaultCharacter.bob
+    };
+  });
+
+  characterOptions = config.characters.map((character) => {
+    const meta = characterMeta[character.id] || characterMeta.dad;
+    return {
+      key: character.id,
+      label: meta.label || String(character.name || character.id).toUpperCase(),
+      color: meta.color,
+      description: meta.description,
+      stats: meta.stats
+    };
+  });
+  characterOptions.push({
+    key: 'family',
+    label: 'FAMIGLIA',
+    color: '#fff4ca',
+    description: 'Tutti insieme: il gioco usa l intero gruppo',
+    stats: [6, 6, 5, 6]
+  });
+}
 
 function pxText(text, x, y, color = palette.white, scale = 1, align = 'left') {
   ctx.save();
@@ -230,6 +402,9 @@ function setControlState(name, pressed) {
     return;
   }
   controls[name] = pressed;
+  if (name === 'jump' && pressed && game.screen !== 'characterSelect') {
+    game.jumpBuffer = JUMP_BUFFER_TIME;
+  }
   const button = document.querySelector(`#touch-controls [data-control="${name}"]`);
   if (button) {
     button.classList.toggle('active', pressed);
@@ -448,22 +623,40 @@ function getTerrainYAt(localX, sectionIndex = game.currentSection) {
 }
 
 function seedCollectibles() {
-  game.collectibles = [
-    { section: 0, x: 220, y: 954, taken: false },
-    { section: 0, x: 520, y: 928, taken: false },
-    { section: 0, x: 840, y: 982, taken: false },
-    { section: 0, x: 1260, y: 950, taken: false },
-    { section: 1, x: 164, y: 936, taken: false },
-    { section: 1, x: 604, y: 990, taken: false },
-    { section: 1, x: 1084, y: 958, taken: false },
-    { section: 2, x: 28, y: 984, taken: false },
-    { section: 2, x: 628, y: 944, taken: false },
-    { section: 2, x: 1288, y: 970, taken: false }
-  ];
+  game.collectibles = config.collectibles.map((item) => ({
+    section: Number(item.section) || 0,
+    x: Number(item.x) || 0,
+    y: Number(item.y) || 0,
+    taken: false
+  }));
 }
 
 function updateCamera() {
   game.cameraX = clamp(game.family[0].x - WIDTH * 0.34, 0, game.worldWidth - WIDTH);
+}
+
+function getActiveFormation() {
+  if (game.selectedCharacter === 'family') {
+    return formation;
+  }
+  const selected = formation.find((member) => member.key === game.selectedCharacter) || formation[0];
+  return [{ ...selected, dx: 0, dy: 0 }];
+}
+
+function createFamilyMember(def, x, sectionIndex, index) {
+  return {
+    x,
+    y: getTerrainYAt(x, sectionIndex),
+    vx: 0,
+    vy: 0,
+    grounded: true,
+    coyoteTimer: 0,
+    facing: 1,
+    sprite: def.sprite,
+    scale: def.scale,
+    bobPhase: index * 1.3,
+    groundOffset: 0
+  };
 }
 
 function respawnFamilyAtCheckpoint() {
@@ -474,46 +667,72 @@ function respawnFamilyAtCheckpoint() {
   game.family[0].vx = 0;
   game.family[0].vy = 0;
   game.family[0].grounded = true;
+  game.family[0].coyoteTimer = 0;
   game.family[0].facing = 1;
 
   for (let i = 1; i < game.family.length; i++) {
     const member = game.family[i];
-    const def = formation[i];
+    const def = getActiveFormation()[i];
     member.x = checkpointX + def.dx;
+    const surface = getTerrainSurfaceAt(member.x, game.currentSection);
+    if (surface === null) {
+      member.x = checkpointX;
+    }
     member.y = getTerrainYAt(member.x, game.currentSection) + (member.groundOffset || 0);
     member.vx = 0;
     member.vy = 0;
     member.grounded = true;
+    member.coyoteTimer = 0;
     member.facing = 1;
   }
 
   updateCamera();
   game.jumpLock = false;
+  game.jumpBuffer = 0;
+  game.lastCheckpointSoundX = checkpointX;
   game.message = 'Riprova con un salto';
+  game.showCenterMessage = true;
 }
 
 function placeFamilyAtSectionStart(sectionIndex) {
+  const activeFormation = getActiveFormation();
   game.currentSection = sectionIndex;
   game.checkpointSection = sectionIndex;
   game.checkpointX = SECTION_START_X;
-  game.family = [
-    { x: SECTION_START_X, y: getTerrainYAt(SECTION_START_X, sectionIndex), vx: 0, vy: 0, grounded: true, facing: 1, sprite: 'dad', scale: 1.58, bobPhase: 0, groundOffset: 0 },
-    { x: SECTION_START_X + 156, y: getTerrainYAt(SECTION_START_X + 156, sectionIndex), vx: 0, vy: 0, grounded: true, facing: 1, sprite: 'mom', scale: 1.52, bobPhase: 1.3, groundOffset: 0 },
-    { x: SECTION_START_X + 284, y: getTerrainYAt(SECTION_START_X + 284, sectionIndex), vx: 0, vy: 0, grounded: true, facing: 1, sprite: 'kid', scale: 1.40, bobPhase: 2.1, groundOffset: 0 },
-    { x: SECTION_START_X + 456, y: getTerrainYAt(SECTION_START_X + 456, sectionIndex), vx: 0, vy: 0, grounded: true, facing: 1, sprite: 'teen', scale: 1.54, bobPhase: 3.4, groundOffset: 0 }
-  ];
+  game.family = activeFormation.map((def, index) => createFamilyMember(def, SECTION_START_X + def.dx, sectionIndex, index));
   updateCamera();
 }
 
 function resetGame() {
   game.score = 0;
+  game.combo = 0;
+  game.comboTimer = 0;
+  game.comboPulse = 0;
+  game.floatingTexts = [];
+  game.totalGems = Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
   game.completed = false;
   game.energy = 10;
-  game.timer = 238;
-  game.message = 'Corri verso destra e raccogli le stelle';
+  game.timer = Number(config.game.timerSeconds) || DEFAULT_CONFIG.game.timerSeconds;
+  game.message = config.game.startMessage || DEFAULT_CONFIG.game.startMessage;
+  game.showCenterMessage = false;
+  game.lastCheckpointSoundX = SECTION_START_X;
   placeFamilyAtSectionStart(0);
   game.jumpLock = false;
+  game.jumpBuffer = 0;
   seedCollectibles();
+}
+
+function confirmCharacterSelection() {
+  const selected = characterOptions[game.selectedOptionIndex] || characterOptions[0];
+  game.selectedCharacter = selected.key;
+  game.screen = 'play';
+  resetGame();
+  lastTime = 0;
+}
+
+function moveCharacterSelection(direction) {
+  const count = characterOptions.length;
+  game.selectedOptionIndex = (game.selectedOptionIndex + direction + count) % count;
 }
 
 function drawSky() {
@@ -687,11 +906,16 @@ function drawHUD(t) {
 
   pxText('ENERGIA', 804, 28, '#8dff8f', 0.72);
   drawBar(804, 96, 230, 34, game.energy / 10, palette.energy, '#28422d');
+
+  if (game.combo >= 2) {
+    const pulseScale = 0.85 + game.comboPulse * 1.2;
+    pxText(`x${game.combo} COMBO`, WIDTH / 2, 168, palette.gold1, pulseScale, 'center');
+  }
 }
 
 function drawCenterPanel() {
   const message = getHudMessage();
-  if (!game.completed && message === 'Raccogli le stelle lungo il percorso') {
+  if (!game.showCenterMessage) {
     return;
   }
 
@@ -713,10 +937,101 @@ function drawBottomPanels() {
   drawBar(40, 1392, 460, 34, distanceRatio, '#ffbf38', '#3f3142');
 
   pxText(jumpState, 690, 1328, player.grounded ? '#8dff8f' : '#bfe7ff', 0.76, 'center');
-  pxText('SPAZIO SALTA', 690, 1394, '#ffffff', 0.62, 'center');
+  pxText('SPAZIO SALTA  SHIFT CORRI', 690, 1394, '#ffffff', 0.48, 'center');
 
   pxText('R RESET', 952, 1328, '#bfe7ff', 0.62, 'center');
   pxText(`PUNTI ${String(game.score * 150).padStart(4, '0')}`, 952, 1394, '#ffe66d', 0.68, 'center');
+}
+
+function drawSelectionSprite(spriteKey, x, y, scale = 2.4) {
+  const frame = sprites[spriteKey]?.right?.idle;
+  if (!frame) {
+    return;
+  }
+  const w = frame.width || frame.naturalWidth || 1;
+  const h = frame.height || frame.naturalHeight || 1;
+  ctx.drawImage(frame, x - (w * scale) / 2, y - h * scale, w * scale, h * scale);
+}
+
+function drawStatRows(option, x, y) {
+  const icons = ['♥', '⚔', '◆', '▲'];
+  for (let row = 0; row < option.stats.length; row++) {
+    pxText(icons[row], x, y + row * 36, row === 0 ? palette.heart : '#fff4ca', 0.44);
+    for (let i = 0; i < 6; i++) {
+      pixelRect(x + 42 + i * 20, y + 8 + row * 36, 15, 18, i < option.stats[row] ? '#56de61' : '#1c2937');
+    }
+  }
+}
+
+function drawCharacterCard(option, index, x, y, w, h) {
+  const selected = index === game.selectedOptionIndex;
+  const border = selected ? '#ffe66d' : option.color;
+  const fill = selected ? '#14253f' : '#07152a';
+
+  pixelRect(x - 6, y - 6, w + 12, h + 12, border);
+  pixelRect(x, y, w, h, '#020816');
+  pixelRect(x + 8, y + 8, w - 16, h - 16, fill);
+  pxText(option.label, x + w / 2, y + 22, option.color, option.key === 'family' ? 0.56 : 0.5, 'center');
+
+  if (option.key === 'family') {
+    drawSelectionSprite('dad', x + 58, y + 258, 1.45);
+    drawSelectionSprite('mom', x + 108, y + 260, 1.35);
+    drawSelectionSprite('kid', x + 148, y + 260, 1.35);
+    drawSelectionSprite('teen', x + 186, y + 260, 1.35);
+  } else {
+    drawSelectionSprite(option.key, x + w / 2, y + 292, 2.0);
+  }
+
+  pixelRect(x + 14, y + 314, w - 28, 150, 'rgba(0, 8, 18, 0.72)');
+  drawStatRows(option, x + 26, y + 330);
+
+  if (selected) {
+    pxText('▼', x + w / 2, y + h + 12, '#ffe66d', 0.7, 'center');
+  }
+
+  selectionHitBoxes[index] = { x, y, w, h };
+}
+
+function drawCharacterSelection(t) {
+  selectionHitBoxes = [];
+  drawSkyParallax(t * 0.04);
+  drawHillsAndTown(0);
+  pixelRect(0, 0, WIDTH, HEIGHT, 'rgba(1, 6, 16, 0.35)');
+
+  pixelRect(0, 0, WIDTH, 150, '#020816');
+  pixelRect(0, 146, WIDTH, 8, palette.hudLine);
+  pxText(String(config.game.title || DEFAULT_CONFIG.game.title).toUpperCase(), WIDTH / 2, 24, '#ffe66d', 1.0, 'center');
+  pxText(String(config.game.subtitle || DEFAULT_CONFIG.game.subtitle).toUpperCase(), WIDTH / 2, 92, '#9dd3ff', 0.48, 'center');
+  pxText('P1', 40, 42, '#32b4ea', 0.86);
+  pxText('MAPPA', 930, 42, '#56de61', 0.62, 'center');
+
+  pixelRect(184, 206, 712, 122, '#020816');
+  pixelRect(194, 216, 692, 102, '#111927');
+  pixelRect(184, 320, 712, 8, palette.hudLine);
+  pxText('SCEGLI IL TUO PERSONAGGIO', WIDTH / 2, 238, '#ffe66d', 0.78, 'center');
+
+  const cardW = 188;
+  const cardH = 486;
+  const gap = 18;
+  const startX = Math.round((WIDTH - (cardW * characterOptions.length + gap * (characterOptions.length - 1))) / 2);
+  for (let i = 0; i < characterOptions.length; i++) {
+    drawCharacterCard(characterOptions[i], i, startX + i * (cardW + gap), 390, cardW, cardH);
+  }
+
+  const selected = characterOptions[game.selectedOptionIndex];
+  pixelRect(200, 948, 680, 130, '#020816');
+  pixelRect(210, 958, 660, 110, '#07152a');
+  pixelRect(200, 1070, 680, 8, selected.color);
+  pxText(selected.label, WIDTH / 2, 970, selected.color, 0.74, 'center');
+  pxText(selected.description.toUpperCase(), WIDTH / 2, 1028, '#ffffff', 0.43, 'center');
+
+  selectionHitBoxes.confirm = { x: 348, y: 1122, w: 384, h: 92 };
+  pixelRect(348, 1122, 384, 92, '#0b531f');
+  pixelRect(362, 1136, 356, 64, '#168f35');
+  pxText('CONFERMA', WIDTH / 2, 1142, '#ffffff', 0.76, 'center');
+
+  pxText('←  →  CAMBIA', 300, 1248, '#ffe66d', 0.54, 'center');
+  pxText('INVIO / SPAZIO  GIOCA', 780, 1248, '#9dd3ff', 0.54, 'center');
 }
 
 function drawSparkles(t) {
@@ -747,6 +1062,26 @@ function drawCollectibleLayer(t, cameraX = 0) {
   }
 }
 
+function addFloatingText(text, x, y, color = palette.gold1) {
+  game.floatingTexts.push({ text, x, y, color, age: 0, duration: 0.85 });
+}
+
+function updateFloatingTexts(dt) {
+  for (const text of game.floatingTexts) {
+    text.age += dt;
+    text.y -= 72 * dt;
+  }
+  game.floatingTexts = game.floatingTexts.filter((text) => text.age < text.duration);
+}
+
+function drawFloatingTexts(cameraX = 0) {
+  for (const text of game.floatingTexts) {
+    const ratio = text.age / text.duration;
+    const scale = 0.58 + Math.sin(ratio * Math.PI) * 0.16;
+    pxText(text.text, text.x - cameraX, text.y, text.color, scale, 'center');
+  }
+}
+
 function drawWorld(cameraX, t) {
   if (levelReady && levelImage.naturalWidth) {
     const section = LEVEL_SEGMENTS[game.currentSection];
@@ -769,37 +1104,47 @@ function drawWorld(cameraX, t) {
 
   drawCollectibleLayer(t, cameraX);
   drawParty(t, cameraX);
+  drawFloatingTexts(cameraX);
 }
 
 function updateGame(dt) {
+  if (game.screen === 'characterSelect') {
+    return;
+  }
+  if (game.completed) {
+    return;
+  }
+
   game.timer = Math.max(0, game.timer - dt);
   game.energy = Math.max(0, game.energy - dt * 0.03);
+  if (game.comboTimer > 0) {
+    game.comboTimer = Math.max(0, game.comboTimer - dt);
+  } else {
+    game.combo = 0;
+  }
+  game.comboPulse = Math.max(0, game.comboPulse - dt);
+  updateFloatingTexts(dt);
+
   if (game.timer === 0 && !game.completed) {
     game.message = 'Tempo terminato, premi R per riprovare';
+    game.showCenterMessage = true;
   }
 
   const player = game.family[0];
   const inputX = (controls.right ? 1 : 0) - (controls.left ? 1 : 0);
   const jumpRequested = controls.jump || controls.up;
   const groundedBeforeMove = player.grounded;
-  const accel = groundedBeforeMove ? PLAYER_ACCEL : AIR_ACCEL;
-  const maxSpeed = groundedBeforeMove ? PLAYER_MAX_SPEED : AIR_MAX_SPEED;
+  const groundAccel = controls.run ? PLAYER_RUN_ACCEL : PLAYER_WALK_ACCEL;
+  const groundMaxSpeed = controls.run ? PLAYER_RUN_MAX_SPEED : PLAYER_WALK_MAX_SPEED;
+  const accel = groundedBeforeMove ? groundAccel : AIR_ACCEL;
+  const maxSpeed = groundedBeforeMove ? groundMaxSpeed : AIR_MAX_SPEED;
   const drag = Math.pow(groundedBeforeMove ? PLAYER_DRAG : AIR_DRAG, dt * 60);
 
   if (!jumpRequested) {
     game.jumpLock = false;
   }
-  if (jumpRequested && player.grounded && !game.jumpLock) {
-    for (const member of game.family) {
-      if (member.grounded) {
-        member.vy = -JUMP_VELOCITY;
-        member.grounded = false;
-        member.vx += inputX * JUMP_FORWARD_BOOST;
-      }
-    }
-    game.jumpLock = true;
-    game.message = 'Salta il vuoto';
-  }
+  game.jumpBuffer = Math.max(0, game.jumpBuffer - dt);
+  player.coyoteTimer = Math.max(0, (player.coyoteTimer || 0) - dt);
 
   player.vx += inputX * accel * dt;
   player.vx = clamp(player.vx, -maxSpeed, maxSpeed);
@@ -815,10 +1160,32 @@ function updateGame(dt) {
 
   updateCamera();
 
+  const playerSurfaceY = getTerrainSurfaceAt(player.x, game.currentSection);
+  if (groundedBeforeMove && playerSurfaceY === null && player.vy >= 0) {
+    player.coyoteTimer = COYOTE_TIME;
+  }
+
+  if (game.jumpBuffer > 0 && (player.grounded || player.coyoteTimer > 0) && !game.jumpLock) {
+    for (const member of game.family) {
+      if (member.grounded || member === player) {
+        member.vy = -JUMP_VELOCITY;
+        member.grounded = false;
+        member.coyoteTimer = 0;
+        member.vx += inputX * JUMP_FORWARD_BOOST;
+      }
+    }
+    game.jumpLock = true;
+    game.jumpBuffer = 0;
+    audio.jump();
+    game.message = 'Salta il vuoto';
+    game.showCenterMessage = true;
+  }
+
+  const activeFormation = getActiveFormation();
   for (let i = 1; i < game.family.length; i++) {
     const leader = game.family[i - 1];
     const member = game.family[i];
-    const def = formation[i];
+    const def = activeFormation[i];
     const targetX = leader.x + def.dx;
     const dx = targetX - member.x;
     member.vx += clamp(dx, -def.speed, def.speed) * dt * 6;
@@ -833,10 +1200,13 @@ function updateGame(dt) {
     if (game.currentSection < LEVEL_SEGMENTS.length - 1) {
       placeFamilyAtSectionStart(game.currentSection + 1);
       game.message = `Schermata ${game.currentSection + 1} di ${LEVEL_SEGMENTS.length}`;
+      game.showCenterMessage = true;
       return;
     }
     game.completed = true;
     game.message = 'Ultima schermata completata';
+    game.showCenterMessage = true;
+    audio.win();
     player.x = SECTION_END_X;
     player.vx = 0;
     updateCamera();
@@ -852,12 +1222,17 @@ function updateGame(dt) {
         member.y = surfaceY + (member.groundOffset || 0);
         member.vy = 0;
         member.grounded = true;
+        member.coyoteTimer = 0;
       } else {
         member.grounded = false;
       }
       if (member === player && surfaceY !== null && member.grounded) {
         game.checkpointSection = game.currentSection;
         game.checkpointX = member.x;
+        if (Math.abs(member.x - game.lastCheckpointSoundX) > 360) {
+          game.lastCheckpointSoundX = member.x;
+          audio.checkpoint();
+        }
       }
     } else {
       member.grounded = false;
@@ -871,6 +1246,7 @@ function updateGame(dt) {
 
   if (needsRespawn) {
     game.energy = Math.max(0, game.energy - 1);
+    audio.fall();
     respawnFamilyAtCheckpoint();
     return;
   }
@@ -879,26 +1255,42 @@ function updateGame(dt) {
     if (item.taken || item.section !== game.currentSection) {
       continue;
     }
-    const playerPickup = { x: player.x, y: player.y - 110 };
-    if (dist2(item, playerPickup) < 120 * 120) {
+    const pickupOffset = player.scale * 70;
+    const pickupRadius = player.scale * 75;
+    const playerPickup = { x: player.x, y: player.y - pickupOffset };
+    if (dist2(item, playerPickup) < pickupRadius ** 2) {
       item.taken = true;
-      game.score += 1;
+      game.comboTimer = game.comboWindow;
+      game.combo += 1;
+      game.comboPulse = 0.22;
+      const multiplier = Math.min(game.combo, 5);
+      game.score += multiplier;
+      addFloatingText(`+1 x${multiplier}`, player.x, player.y - player.scale * 150, palette.gold1);
       game.energy = Math.min(10, game.energy + 1);
+      audio.collectStar();
       if (game.score >= game.totalGems) {
         game.completed = true;
         game.message = 'Missione completata';
+        game.showCenterMessage = true;
+        audio.win();
       }
     }
   }
 
-  if (!game.completed && game.score < game.totalGems && game.timer > 0) {
+  if (!game.completed && game.score < game.totalGems && game.timer > 0 && player.grounded) {
     game.message = 'Raccogli le stelle lungo il percorso';
+    game.showCenterMessage = false;
   }
 }
 
 function renderScene(t) {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.imageSmoothingEnabled = false;
+
+  if (game.screen === 'characterSelect') {
+    drawCharacterSelection(t);
+    return;
+  }
 
   drawWorld(game.cameraX, t);
   drawCenterPanel();
@@ -917,6 +1309,20 @@ function render(t) {
 
 window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
+  if (game.screen === 'characterSelect') {
+    if (key === 'arrowleft' || key === 'a') {
+      e.preventDefault();
+      moveCharacterSelection(-1);
+    } else if (key === 'arrowright' || key === 'd') {
+      e.preventDefault();
+      moveCharacterSelection(1);
+    } else if (key === 'enter' || key === ' ') {
+      e.preventDefault();
+      confirmCharacterSelection();
+    }
+    return;
+  }
+
   if (key === 'arrowleft' || key === 'a') {
     e.preventDefault();
     setControlState('left', true);
@@ -926,6 +1332,9 @@ window.addEventListener('keydown', (e) => {
   } else if (key === 'arrowup' || key === 'w' || key === ' ') {
     e.preventDefault();
     setControlState('jump', true);
+  } else if (key === 'shift') {
+    e.preventDefault();
+    setControlState('run', true);
   } else if (key === 'r') {
     resetGame();
     lastTime = 0;
@@ -935,6 +1344,10 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
   const key = e.key.toLowerCase();
+  if (game.screen === 'characterSelect') {
+    return;
+  }
+
   if (key === 'arrowleft' || key === 'a') {
     e.preventDefault();
     setControlState('left', false);
@@ -944,10 +1357,36 @@ window.addEventListener('keyup', (e) => {
   } else if (key === 'arrowup' || key === 'w' || key === ' ') {
     e.preventDefault();
     setControlState('jump', false);
+  } else if (key === 'shift') {
+    e.preventDefault();
+    setControlState('run', false);
   }
 });
 
-Promise.all([loadSprites(), loadLevelBackground(), loadTerrainData()]).then(() => {
+canvas.addEventListener('pointerdown', (event) => {
+  if (game.screen !== 'characterSelect') {
+    return;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const x = (event.clientX - rect.left) * (WIDTH / rect.width);
+  const y = (event.clientY - rect.top) * (HEIGHT / rect.height);
+
+  for (let i = 0; i < characterOptions.length; i++) {
+    const hit = selectionHitBoxes[i];
+    if (hit && x >= hit.x && x <= hit.x + hit.w && y >= hit.y && y <= hit.y + hit.h) {
+      game.selectedOptionIndex = i;
+      return;
+    }
+  }
+
+  const confirm = selectionHitBoxes.confirm;
+  if (confirm && x >= confirm.x && x <= confirm.x + confirm.w && y >= confirm.y && y <= confirm.y + confirm.h) {
+    confirmCharacterSelection();
+  }
+});
+
+Promise.all([loadConfig(), loadSprites(), loadLevelBackground(), loadTerrainData()]).then(([loadedConfig]) => {
+  applyConfig(loadedConfig);
   bindTouchControls();
   resetGame();
   requestAnimationFrame(render);
