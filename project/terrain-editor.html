@@ -127,6 +127,18 @@
         color: #c8d7ea;
         font-size: 13px;
       }
+      .level-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .level-tabs button {
+        min-width: 120px;
+      }
+      .level-tabs button.active {
+        background: linear-gradient(180deg, #ef9f21, #b96c05);
+        color: #1b1203;
+      }
       .legend span {
         display: inline-flex;
         align-items: center;
@@ -145,6 +157,10 @@
       <div class="topbar">
         <h1>Terrain Editor</h1>
         <p>Terreno: disegna la linea verde. Buco: trascina per aprire un vuoto. Ripara buco: trascina sopra il vuoto per richiuderlo. Salva in localStorage oppure esporta il JSON che il gioco legge automaticamente.</p>
+        <div class="level-tabs">
+          <button id="level-0" class="active" type="button">Livello 1</button>
+          <button id="level-1" type="button">Livello 2</button>
+        </div>
         <div class="controls">
           <button id="mode-terrain" class="active" type="button">Terreno</button>
           <button id="mode-gap" type="button">Vuoto</button>
@@ -167,29 +183,8 @@
         <span><i class="swatch" style="background:#ffb528"></i>punti attivi</span>
       </div>
 
-      <div class="sections">
-        <div class="section">
-          <div class="section-head">
-            <h2>Strip 1</h2>
-            <small>sezione iniziale</small>
-          </div>
-          <canvas data-section="0" width="1536" height="341"></canvas>
-        </div>
-        <div class="section">
-          <div class="section-head">
-            <h2>Strip 2</h2>
-            <small>sezione centrale</small>
-          </div>
-          <canvas data-section="1" width="1536" height="341"></canvas>
-        </div>
-        <div class="section">
-          <div class="section-head">
-            <h2>Strip 3</h2>
-            <small>sezione finale</small>
-          </div>
-          <canvas data-section="2" width="1536" height="342"></canvas>
-        </div>
-      </div>
+      <div class="sections" id="sections"></div>
+    </div>
     </div>
     <script src="./terrain-editor.js"></script>
   </body>

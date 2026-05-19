@@ -1,72 +1,149 @@
 const SOURCE_SECTION_WIDTH = 1536;
-const SOURCE_SECTION_HEIGHT = 341;
-const SAMPLE_STEP = 8;
-const SECTION_COUNT = 3;
 const STORAGE_KEY = 'familygame-terrain';
-
-const DEFAULT_TERRAIN_DATA = {
-  sourceSectionWidth: SOURCE_SECTION_WIDTH,
-  sourceSectionHeight: SOURCE_SECTION_HEIGHT,
-  terrainProfiles: [
-    [
-      { x: 0, y: 298 },
-      { x: 180, y: 298 },
-      { x: 360, y: 299 },
-      { x: 560, y: 299 },
-      { x: 720, y: 304 },
-      { x: 860, y: 309 },
-      { x: 1040, y: 311 },
-      { x: 1240, y: 304 },
-      { x: 1400, y: 298 },
-      { x: 1536, y: 297 }
-    ],
-    [
-      { x: 0, y: 299 },
-      { x: 180, y: 299 },
-      { x: 360, y: 300 },
-      { x: 540, y: 304 },
-      { x: 700, y: 311 },
-      { x: 860, y: 314 },
-      { x: 1020, y: 312 },
-      { x: 1180, y: 305 },
-      { x: 1340, y: 298 },
-      { x: 1536, y: 295 }
-    ],
-    [
-      { x: 0, y: 297 },
-      { x: 220, y: 297 },
-      { x: 420, y: 297 },
-      { x: 640, y: 299 },
-      { x: 840, y: 301 },
-      { x: 1020, y: 300 },
-      { x: 1220, y: 298 },
-      { x: 1380, y: 297 },
-      { x: 1536, y: 296 }
+const CONFIG_PATH = './assets/config.json';
+const LEVEL_CONFIGS = [
+  {
+    id: 'level-1',
+    title: 'Livello 1',
+    subtitle: 'Prima serie di schermate',
+    backgroundPath: './level.png',
+    stripPaths: ['./level_strip_0.png', './level_strip_1.png', './level_strip_2.png'],
+    sourceSectionHeight: 341,
+    segments: [
+      { sy: 0, sh: 341 },
+      { sy: 341, sh: 341 },
+      { sy: 682, sh: 342 }
     ]
-  ],
-  solidSpans: [
-    [{ from: 0, to: 1536 }],
-    [
-      { from: 0, to: 560 },
-      { from: 1120, to: 1536 }
+  },
+  {
+    id: 'level-2',
+    title: 'Livello 2',
+    subtitle: 'Seconda serie di schermate',
+    backgroundPath: './level2_strip_0.png',
+    stripPaths: [
+      './level2_strip_0.png',
+      './level2_strip_1.png',
+      './level2_strip_2.png',
+      './level2_strip_3.png'
     ],
-    [{ from: 0, to: 1536 }]
-  ]
-};
+    sourceSectionHeight: 256,
+    segments: [
+      { sy: 0, sh: 256 },
+      { sy: 256, sh: 256 },
+      { sy: 512, sh: 256 },
+      { sy: 768, sh: 256 }
+    ]
+  }
+];
 
-const bg = new Image();
-bg.src = './level.png';
-bg.onload = () => renderAll();
-bg.onerror = () => renderAll();
+const DEFAULT_LEVEL_DATA = [
+  {
+    terrainProfiles: [
+      [
+        { x: 0, y: 298 },
+        { x: 180, y: 298 },
+        { x: 360, y: 299 },
+        { x: 560, y: 299 },
+        { x: 720, y: 304 },
+        { x: 860, y: 309 },
+        { x: 1040, y: 311 },
+        { x: 1240, y: 304 },
+        { x: 1400, y: 298 },
+        { x: 1536, y: 297 }
+      ],
+      [
+        { x: 0, y: 299 },
+        { x: 180, y: 299 },
+        { x: 360, y: 300 },
+        { x: 540, y: 304 },
+        { x: 700, y: 311 },
+        { x: 860, y: 314 },
+        { x: 1020, y: 312 },
+        { x: 1180, y: 305 },
+        { x: 1340, y: 298 },
+        { x: 1536, y: 295 }
+      ],
+      [
+        { x: 0, y: 297 },
+        { x: 220, y: 297 },
+        { x: 420, y: 297 },
+        { x: 640, y: 299 },
+        { x: 840, y: 301 },
+        { x: 1020, y: 300 },
+        { x: 1220, y: 298 },
+        { x: 1380, y: 297 },
+        { x: 1536, y: 296 }
+      ]
+    ],
+    solidSpans: [
+      [{ from: 0, to: 1536 }],
+      [
+        { from: 0, to: 560 },
+        { from: 1120, to: 1536 }
+      ],
+      [{ from: 0, to: 1536 }]
+    ]
+  },
+  {
+    terrainProfiles: [
+      [
+        { x: 0, y: 210 },
+        { x: 160, y: 210 },
+        { x: 340, y: 209 },
+        { x: 520, y: 208 },
+        { x: 760, y: 214 },
+        { x: 980, y: 218 },
+        { x: 1210, y: 216 },
+        { x: 1400, y: 212 },
+        { x: 1536, y: 210 }
+      ],
+      [
+        { x: 0, y: 212 },
+        { x: 220, y: 212 },
+        { x: 400, y: 214 },
+        { x: 620, y: 218 },
+        { x: 840, y: 219 },
+        { x: 1040, y: 216 },
+        { x: 1230, y: 213 },
+        { x: 1536, y: 211 }
+      ],
+      [
+        { x: 0, y: 213 },
+        { x: 180, y: 213 },
+        { x: 400, y: 214 },
+        { x: 620, y: 216 },
+        { x: 840, y: 219 },
+        { x: 1040, y: 221 },
+        { x: 1230, y: 217 },
+        { x: 1536, y: 212 }
+      ],
+      [
+        { x: 0, y: 214 },
+        { x: 220, y: 214 },
+        { x: 460, y: 213 },
+        { x: 700, y: 214 },
+        { x: 940, y: 216 },
+        { x: 1180, y: 215 },
+        { x: 1380, y: 213 },
+        { x: 1536, y: 212 }
+      ]
+    ],
+    solidSpans: [
+      [{ from: 0, to: 1536 }],
+      [{ from: 0, to: 1536 }],
+      [{ from: 0, to: 1536 }],
+      [{ from: 0, to: 1536 }]
+    ]
+  }
+];
 
-const canvases = [...document.querySelectorAll('canvas[data-section]')];
-const ctxs = canvases.map((canvas) => {
-  const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
-  return ctx;
-});
+const bgImages = LEVEL_CONFIGS.map(() => []);
 
-const els = {
+const canvases = [];
+const ctxs = [];
+const elements = {
+  sections: document.getElementById('sections'),
+  status: document.getElementById('status'),
   terrain: document.getElementById('mode-terrain'),
   gap: document.getElementById('mode-gap'),
   erase: document.getElementById('mode-erase'),
@@ -75,17 +152,16 @@ const els = {
   copy: document.getElementById('copy'),
   reset: document.getElementById('reset'),
   import: document.getElementById('import'),
-  status: document.getElementById('status')
+  levelButtons: LEVEL_CONFIGS.map((_, index) => document.getElementById(`level-${index}`))
 };
 
 const state = {
   mode: 'terrain',
-  activeSection: 0,
-  terrainSamples: [],
-  solidSpans: [],
-  dirty: false,
+  activeLevelIndex: 0,
+  levels: [],
   drag: null,
-  lastJson: ''
+  lastJson: '',
+  dirty: false
 };
 
 function deepClone(value) {
@@ -100,54 +176,97 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-function sectionSampleCount() {
-  return Math.floor(SOURCE_SECTION_WIDTH / SAMPLE_STEP) + 1;
+function loadImage(path) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = path;
+  });
 }
 
-function pointsToSamples(points, fallbackY) {
-  const samples = new Array(sectionSampleCount()).fill(fallbackY);
-  const sorted = [...points].sort((a, b) => a.x - b.x);
-  if (!sorted.length) {
-    return samples;
+async function loadBackgroundImages(levelIndex) {
+  const level = LEVEL_CONFIGS[levelIndex];
+  const paths = Array.isArray(level.stripPaths) && level.stripPaths.length
+    ? level.stripPaths
+    : [level.backgroundPath];
+  const images = [];
+  for (const path of paths) {
+    images.push(await loadImage(path));
   }
-  if (sorted[0].x > 0) {
-    sorted.unshift({ x: 0, y: sorted[0].y });
-  }
-  if (sorted[sorted.length - 1].x < SOURCE_SECTION_WIDTH) {
-    sorted.push({ x: SOURCE_SECTION_WIDTH, y: sorted[sorted.length - 1].y });
-  }
-  for (let i = 0; i < samples.length; i++) {
-    const x = i * SAMPLE_STEP;
-    let left = sorted[0];
-    let right = sorted[sorted.length - 1];
-    for (let j = 1; j < sorted.length; j++) {
-      if (x <= sorted[j].x) {
-        left = sorted[j - 1];
-        right = sorted[j];
-        break;
-      }
+  bgImages[levelIndex] = images;
+}
+
+async function loadEditorConfig() {
+  try {
+    const response = await fetch(CONFIG_PATH, { cache: 'no-store' });
+    if (!response.ok) {
+      return null;
     }
-    const span = Math.max(1, right.x - left.x);
-    const t = clamp((x - left.x) / span, 0, 1);
-    samples[i] = lerp(left.y, right.y, t);
+    return await response.json();
+  } catch {
+    return null;
   }
-  return samples;
 }
 
-function samplesToPoints(samples) {
-  const points = [];
-  for (let i = 0; i < samples.length; i++) {
-    points.push({
-      x: i * SAMPLE_STEP,
-      y: Math.round(clamp(samples[i], 0, SOURCE_SECTION_HEIGHT))
-    });
+function applyConfigStripPaths(config) {
+  const levels = Array.isArray(config?.levels) ? config.levels : [];
+  for (let i = 0; i < LEVEL_CONFIGS.length; i++) {
+    const configLevel = levels[i];
+    const stripPaths = Array.isArray(configLevel?.stripPaths) && configLevel.stripPaths.length
+      ? configLevel.stripPaths
+      : LEVEL_CONFIGS[i].stripPaths;
+    LEVEL_CONFIGS[i].stripPaths = stripPaths;
   }
-  points[points.length - 1].x = SOURCE_SECTION_WIDTH;
-  return points;
+}
+
+function sectionCountFor(levelIndex) {
+  return LEVEL_CONFIGS[levelIndex].segments.length;
+}
+
+function levelHeight(levelIndex, sectionIndex) {
+  return LEVEL_CONFIGS[levelIndex].segments[sectionIndex]?.sh || LEVEL_CONFIGS[levelIndex].sourceSectionHeight;
+}
+
+function makeDefaultLevelData(levelIndex) {
+  const template = DEFAULT_LEVEL_DATA[levelIndex] || DEFAULT_LEVEL_DATA[0];
+  const sectionCount = sectionCountFor(levelIndex);
+  const terrainProfiles = [];
+  const solidSpans = [];
+  for (let i = 0; i < sectionCount; i++) {
+    const templateIndex = Math.min(i, template.terrainProfiles.length - 1);
+    terrainProfiles.push(deepClone(template.terrainProfiles[templateIndex]));
+    solidSpans.push(deepClone(template.solidSpans[Math.min(i, template.solidSpans.length - 1)]));
+  }
+  return {
+    ...deepClone(LEVEL_CONFIGS[levelIndex]),
+    terrainProfiles,
+    solidSpans
+  };
+}
+
+function normalizePoints(points, maxY) {
+  const cleaned = (Array.isArray(points) ? points : [])
+    .map((point) => ({
+      x: clamp(Number(point.x) || 0, 0, SOURCE_SECTION_WIDTH),
+      y: clamp(Number(point.y) || 0, 0, maxY)
+    }))
+    .sort((a, b) => a.x - b.x);
+
+  if (!cleaned.length) {
+    return [];
+  }
+  if (cleaned[0].x !== 0) {
+    cleaned.unshift({ x: 0, y: cleaned[0].y });
+  }
+  if (cleaned[cleaned.length - 1].x !== SOURCE_SECTION_WIDTH) {
+    cleaned.push({ x: SOURCE_SECTION_WIDTH, y: cleaned[cleaned.length - 1].y });
+  }
+  return cleaned;
 }
 
 function normalizeSpans(spans) {
-  const merged = spans
+  const merged = (Array.isArray(spans) ? spans : [])
     .map((span) => ({
       from: clamp(Number(span.from) || 0, 0, SOURCE_SECTION_WIDTH),
       to: clamp(Number(span.to) || 0, 0, SOURCE_SECTION_WIDTH)
@@ -179,61 +298,178 @@ function invertSpans(spans) {
   if (cursor < SOURCE_SECTION_WIDTH) {
     output.push({ from: cursor, to: SOURCE_SECTION_WIDTH });
   }
-  return output.filter((span) => span.to > span.from);
+  return output;
+}
+
+function pointsToSamples(points, maxY, step = 8) {
+  const count = Math.floor(SOURCE_SECTION_WIDTH / step) + 1;
+  const samples = new Array(count).fill(maxY * 0.84);
+  const sorted = normalizePoints(points, maxY);
+  if (!sorted.length) {
+    return samples;
+  }
+  for (let i = 0; i < count; i++) {
+    const x = i * step;
+    let left = sorted[0];
+    let right = sorted[sorted.length - 1];
+    for (let j = 1; j < sorted.length; j++) {
+      if (x <= sorted[j].x) {
+        left = sorted[j - 1];
+        right = sorted[j];
+        break;
+      }
+    }
+    const span = Math.max(1, right.x - left.x);
+    const t = clamp((x - left.x) / span, 0, 1);
+    samples[i] = lerp(left.y, right.y, t);
+  }
+  return samples;
+}
+
+function samplesToPoints(samples, maxY, step = 8) {
+  const points = samples.map((sample, index) => ({
+    x: index * step,
+    y: Math.round(clamp(sample, 0, maxY))
+  }));
+  points[points.length - 1].x = SOURCE_SECTION_WIDTH;
+  return points;
+}
+
+function normalizeLevelData(input, levelIndex) {
+  const fallback = makeDefaultLevelData(levelIndex);
+  const config = LEVEL_CONFIGS[levelIndex];
+  const sectionCount = config.segments.length;
+  const normalized = {
+    id: input?.id || config.id,
+    title: input?.title || config.title,
+    subtitle: input?.subtitle || config.subtitle,
+    backgroundPath: input?.backgroundPath || config.backgroundPath,
+    sourceSectionHeight: Number(input?.sourceSectionHeight) || config.sourceSectionHeight,
+    segments: deepClone(input?.segments?.length ? input.segments : config.segments),
+    terrainProfiles: [],
+    solidSpans: []
+  };
+
+  for (let i = 0; i < sectionCount; i++) {
+    const maxY = normalized.segments[i]?.sh || normalized.sourceSectionHeight;
+    const profilePoints = input?.terrainProfiles?.[i] || fallback.terrainProfiles[Math.min(i, fallback.terrainProfiles.length - 1)];
+    const spans = input?.solidSpans?.[i] || fallback.solidSpans[Math.min(i, fallback.solidSpans.length - 1)];
+    normalized.terrainProfiles.push(normalizePoints(profilePoints, maxY));
+    normalized.solidSpans.push(normalizeSpans(spans));
+  }
+
+  return normalized;
 }
 
 function normalizeTerrainData(data) {
-  const terrainProfiles = Array.from({ length: SECTION_COUNT }, (_, index) => {
-    const points = Array.isArray(data?.terrainProfiles?.[index]) ? data.terrainProfiles[index] : [];
-    const cleaned = points
-      .map((point) => ({
-        x: clamp(Number(point.x) || 0, 0, SOURCE_SECTION_WIDTH),
-        y: clamp(Number(point.y) || 0, 0, SOURCE_SECTION_HEIGHT)
-      }))
-      .sort((a, b) => a.x - b.x);
-    if (!cleaned.length) {
-      return deepClone(DEFAULT_TERRAIN_DATA.terrainProfiles[index]);
-    }
-    if (cleaned[0].x !== 0) {
-      cleaned.unshift({ x: 0, y: cleaned[0].y });
-    }
-    if (cleaned[cleaned.length - 1].x !== SOURCE_SECTION_WIDTH) {
-      cleaned.push({ x: SOURCE_SECTION_WIDTH, y: cleaned[cleaned.length - 1].y });
-    }
-    return cleaned;
-  });
+  if (Array.isArray(data?.levels) && data.levels.length) {
+    return {
+      levels: LEVEL_CONFIGS.map((_, index) => normalizeLevelData(data.levels[index], index))
+    };
+  }
 
-  const solidSpans = Array.from({ length: SECTION_COUNT }, (_, index) =>
-    normalizeSpans(Array.isArray(data?.solidSpans?.[index]) ? data.solidSpans[index] : [])
-  );
-
-  return { terrainProfiles, solidSpans };
+  return {
+    levels: LEVEL_CONFIGS.map((_, index) => {
+      if (index === 0 && (data?.terrainProfiles || data?.solidSpans)) {
+        return normalizeLevelData(data, index);
+      }
+      return makeDefaultLevelData(index);
+    })
+  };
 }
 
 function buildData() {
   return {
+    version: 2,
     sourceSectionWidth: SOURCE_SECTION_WIDTH,
-    sourceSectionHeight: SOURCE_SECTION_HEIGHT,
-    terrainProfiles: state.terrainSamples.map((samples) => samplesToPoints(samples)),
-    solidSpans: deepClone(state.solidSpans)
+    levels: state.levels.map((level, levelIndex) => ({
+      id: level.id,
+      title: level.title,
+      subtitle: level.subtitle,
+      backgroundPath: level.backgroundPath,
+      sourceSectionHeight: level.sourceSectionHeight,
+      segments: deepClone(level.segments),
+      terrainProfiles: state.levels[levelIndex].terrainSamples.map((samples, sectionIndex) =>
+        samplesToPoints(samples, levelHeight(levelIndex, sectionIndex))
+      ),
+      solidSpans: deepClone(level.solidSpans)
+    }))
   };
 }
 
 function setStatus(text) {
-  els.status.textContent = text;
+  elements.status.textContent = text;
 }
 
 function setMode(mode) {
   state.mode = mode;
-  els.terrain.classList.toggle('active', mode === 'terrain');
-  els.gap.classList.toggle('active', mode === 'gap');
-  els.erase.classList.toggle('active', mode === 'erase');
+  elements.terrain.classList.toggle('active', mode === 'terrain');
+  elements.gap.classList.toggle('active', mode === 'gap');
+  elements.erase.classList.toggle('active', mode === 'erase');
   const labels = {
     terrain: 'Disegna terreno',
     gap: 'Crea buco',
     erase: 'Ripara buco'
   };
   setStatus(labels[mode] || mode);
+}
+
+function setActiveLevel(levelIndex) {
+  state.activeLevelIndex = levelIndex;
+  elements.levelButtons.forEach((button, index) => button.classList.toggle('active', index === levelIndex));
+  syncLevelView();
+}
+
+function buildLevelCanvas(levelIndex, sectionIndex) {
+  const level = state.levels[levelIndex];
+  const section = level.segments[sectionIndex];
+  const wrapper = document.createElement('div');
+  wrapper.className = 'section';
+
+  const head = document.createElement('div');
+  head.className = 'section-head';
+  const title = document.createElement('h2');
+  title.textContent = `${level.title} - Strip ${sectionIndex + 1}`;
+  const subtitle = document.createElement('small');
+  subtitle.textContent = `${level.subtitle} | ${section.sh}px`;
+  head.appendChild(title);
+  head.appendChild(subtitle);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = SOURCE_SECTION_WIDTH;
+  canvas.height = section.sh;
+  canvas.dataset.level = String(levelIndex);
+  canvas.dataset.section = String(sectionIndex);
+
+  wrapper.appendChild(head);
+  wrapper.appendChild(canvas);
+  return { wrapper, canvas };
+}
+
+function rebuildCanvases() {
+  elements.sections.innerHTML = '';
+  canvases.length = 0;
+  ctxs.length = 0;
+
+  const levelIndex = state.activeLevelIndex;
+  const level = state.levels[levelIndex];
+  for (let i = 0; i < level.segments.length; i++) {
+    const { wrapper, canvas } = buildLevelCanvas(levelIndex, i);
+    elements.sections.appendChild(wrapper);
+    canvases.push(canvas);
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctxs.push(ctx);
+    installCanvasEvents(canvas);
+  }
+}
+
+function drawActiveLevel() {
+  const levelIndex = state.activeLevelIndex;
+  const level = state.levels[levelIndex];
+  for (let i = 0; i < level.segments.length; i++) {
+    drawSection(levelIndex, i);
+  }
 }
 
 function getCanvasPoint(event, canvas) {
@@ -244,29 +480,27 @@ function getCanvasPoint(event, canvas) {
   };
 }
 
-function sectionFromCanvas(canvas) {
-  return Number(canvas.dataset.section || 0);
-}
-
-function paintTerrain(sectionIndex, x, y, lastX = null, lastY = null) {
-  const samples = state.terrainSamples[sectionIndex];
-  const idx = clamp(Math.round(x / SAMPLE_STEP), 0, samples.length - 1);
+function paintTerrain(levelIndex, sectionIndex, x, y, lastX = null, lastY = null) {
+  const level = state.levels[levelIndex];
+  const maxY = levelHeight(levelIndex, sectionIndex);
+  const samples = level.terrainSamples[sectionIndex];
+  const idx = clamp(Math.round(x / 8), 0, samples.length - 1);
   if (lastX === null || lastY === null) {
-    samples[idx] = y;
+    samples[idx] = clamp(y, 0, maxY);
     return;
   }
-  const lastIdx = clamp(Math.round(lastX / SAMPLE_STEP), 0, samples.length - 1);
+  const lastIdx = clamp(Math.round(lastX / 8), 0, samples.length - 1);
   const steps = Math.max(1, Math.abs(idx - lastIdx));
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const sampleIndex = Math.round(lerp(lastIdx, idx, t));
     const sampleY = lerp(lastY, y, t);
-    samples[sampleIndex] = sampleY;
+    samples[sampleIndex] = clamp(sampleY, 0, maxY);
   }
 }
 
-function addGap(sectionIndex, fromX, toX) {
-  const spans = state.solidSpans[sectionIndex];
+function addGap(levelIndex, sectionIndex, fromX, toX) {
+  const spans = state.levels[levelIndex].solidSpans[sectionIndex];
   const gap = {
     from: clamp(Math.min(fromX, toX), 0, SOURCE_SECTION_WIDTH),
     to: clamp(Math.max(fromX, toX), 0, SOURCE_SECTION_WIDTH)
@@ -288,11 +522,11 @@ function addGap(sectionIndex, fromX, toX) {
       next.push({ from: gap.to, to: span.to });
     }
   }
-  state.solidSpans[sectionIndex] = normalizeSpans(next);
+  state.levels[levelIndex].solidSpans[sectionIndex] = normalizeSpans(next);
 }
 
-function addSolidRange(sectionIndex, fromX, toX) {
-  const spans = state.solidSpans[sectionIndex];
+function addSolidRange(levelIndex, sectionIndex, fromX, toX) {
+  const spans = state.levels[levelIndex].solidSpans[sectionIndex];
   const solid = {
     from: clamp(Math.min(fromX, toX), 0, SOURCE_SECTION_WIDTH),
     to: clamp(Math.max(fromX, toX), 0, SOURCE_SECTION_WIDTH)
@@ -322,62 +556,52 @@ function addSolidRange(sectionIndex, fromX, toX) {
   if (!inserted) {
     next.push({ ...solid });
   }
-  state.solidSpans[sectionIndex] = normalizeSpans(next);
+  state.levels[levelIndex].solidSpans[sectionIndex] = normalizeSpans(next);
 }
 
-function clearSection(sectionIndex) {
-  state.terrainSamples[sectionIndex] = pointsToSamples(
-    DEFAULT_TERRAIN_DATA.terrainProfiles[sectionIndex],
-    SOURCE_SECTION_HEIGHT * 0.84
-  );
-  state.solidSpans[sectionIndex] = deepClone(DEFAULT_TERRAIN_DATA.solidSpans[sectionIndex]);
-  state.dirty = true;
-  renderAll();
-}
-
-function clearAll() {
-  state.terrainSamples = DEFAULT_TERRAIN_DATA.terrainProfiles.map((points) =>
-    pointsToSamples(points, SOURCE_SECTION_HEIGHT * 0.84)
-  );
-  state.solidSpans = deepClone(DEFAULT_TERRAIN_DATA.solidSpans);
-  state.dirty = true;
-  renderAll();
-}
-
-function drawBackground(ctx, index) {
-  if (!bg.complete) {
+function drawBackground(ctx, levelIndex, sectionIndex) {
+  const images = bgImages[levelIndex] || [];
+  const image = images[sectionIndex];
+  const section = LEVEL_CONFIGS[levelIndex].segments[sectionIndex];
+  if (!image || !image.complete || !image.naturalWidth) {
     ctx.fillStyle = '#10253f';
-    ctx.fillRect(0, 0, SOURCE_SECTION_WIDTH, SOURCE_SECTION_HEIGHT);
+    ctx.fillRect(0, 0, SOURCE_SECTION_WIDTH, section.sh);
     return;
   }
+
+  if (images.length > 1) {
+    ctx.drawImage(image, 0, 0, SOURCE_SECTION_WIDTH, section.sh);
+    return;
+  }
+
   ctx.drawImage(
-    bg,
+    image,
     0,
-    [0, 341, 682][index],
+    section.sy,
     SOURCE_SECTION_WIDTH,
-    index === 2 ? 342 : 341,
+    section.sh,
     0,
     0,
     SOURCE_SECTION_WIDTH,
-    SOURCE_SECTION_HEIGHT
+    section.sh
   );
 }
 
-function drawSolidTerrain(ctx, samples, spans) {
+function drawSolidTerrain(ctx, samples, spans, sectionHeight) {
   ctx.save();
   ctx.fillStyle = 'rgba(44, 204, 104, 0.18)';
   ctx.strokeStyle = 'rgba(68, 211, 106, 0.9)';
   ctx.lineWidth = 4;
 
   for (const span of spans) {
-    const start = clamp(Math.floor(span.from / SAMPLE_STEP), 0, samples.length - 1);
-    const end = clamp(Math.ceil(span.to / SAMPLE_STEP), start + 1, samples.length - 1);
+    const start = clamp(Math.floor(span.from / 8), 0, samples.length - 1);
+    const end = clamp(Math.ceil(span.to / 8), start + 1, samples.length - 1);
     ctx.beginPath();
-    ctx.moveTo(start * SAMPLE_STEP, SOURCE_SECTION_HEIGHT);
+    ctx.moveTo(start * 8, sectionHeight);
     for (let i = start; i <= end; i++) {
-      ctx.lineTo(i * SAMPLE_STEP, samples[i]);
+      ctx.lineTo(i * 8, samples[i]);
     }
-    ctx.lineTo(end * SAMPLE_STEP, SOURCE_SECTION_HEIGHT);
+    ctx.lineTo(end * 8, sectionHeight);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -385,14 +609,14 @@ function drawSolidTerrain(ctx, samples, spans) {
   ctx.restore();
 }
 
-function drawGapRegions(ctx, spans) {
+function drawGapRegions(ctx, spans, sectionHeight) {
   for (const span of spans) {
     const x = Math.round(span.from);
     const width = Math.max(1, Math.round(span.to - span.from));
     ctx.fillStyle = 'rgba(255, 93, 115, 0.28)';
-    ctx.fillRect(x, 0, width, SOURCE_SECTION_HEIGHT);
+    ctx.fillRect(x, 0, width, sectionHeight);
     ctx.fillStyle = 'rgba(255, 93, 115, 0.75)';
-    ctx.fillRect(x, SOURCE_SECTION_HEIGHT - 14, width, 14);
+    ctx.fillRect(x, sectionHeight - 14, width, 14);
   }
 }
 
@@ -402,7 +626,7 @@ function drawTerrainLine(ctx, samples) {
   ctx.lineWidth = 4;
   ctx.beginPath();
   for (let i = 0; i < samples.length; i++) {
-    const x = i * SAMPLE_STEP;
+    const x = i * 8;
     const y = samples[i];
     if (i === 0) {
       ctx.moveTo(x, y);
@@ -413,7 +637,7 @@ function drawTerrainLine(ctx, samples) {
   ctx.stroke();
 
   for (let i = 0; i < samples.length; i += 4) {
-    const x = i * SAMPLE_STEP;
+    const x = i * 8;
     const y = samples[i];
     ctx.fillStyle = i % 8 === 0 ? '#ffb528' : '#f4f6ff';
     ctx.fillRect(Math.round(x - 2), Math.round(y - 2), 4, 4);
@@ -421,22 +645,27 @@ function drawTerrainLine(ctx, samples) {
   ctx.restore();
 }
 
-function drawSection(index) {
-  const ctx = ctxs[index];
-  ctx.clearRect(0, 0, SOURCE_SECTION_WIDTH, SOURCE_SECTION_HEIGHT);
-  drawBackground(ctx, index);
-  const gaps = invertSpans(state.solidSpans[index]);
-  drawSolidTerrain(ctx, state.terrainSamples[index], state.solidSpans[index]);
-  drawGapRegions(ctx, gaps);
-  drawTerrainLine(ctx, state.terrainSamples[index]);
+function drawSection(levelIndex, sectionIndex) {
+  const ctx = ctxs[sectionIndex];
+  const level = state.levels[levelIndex];
+  const section = level.segments[sectionIndex];
+  const samples = level.terrainSamples[sectionIndex];
+  const spans = level.solidSpans[sectionIndex];
+  const gaps = invertSpans(spans);
+
+  ctx.clearRect(0, 0, SOURCE_SECTION_WIDTH, section.sh);
+  drawBackground(ctx, levelIndex, sectionIndex);
+  drawSolidTerrain(ctx, samples, spans, section.sh);
+  drawGapRegions(ctx, gaps, section.sh);
+  drawTerrainLine(ctx, samples);
 
   ctx.save();
   ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-  ctx.fillRect(12, 12, 264, 34);
+  ctx.fillRect(12, 12, 320, 42);
   ctx.fillStyle = '#f4f6ff';
   ctx.font = '18px monospace';
   ctx.fillText(
-    `${state.mode.toUpperCase()} | solidi ${state.solidSpans[index].length} | buchi ${gaps.length}`,
+    `${level.title} | strip ${sectionIndex + 1}/${level.segments.length} | solidi ${spans.length} | buchi ${gaps.length}`,
     24,
     35
   );
@@ -452,19 +681,50 @@ function drawSection(index) {
   ctx.restore();
 }
 
-function renderAll() {
-  for (let i = 0; i < SECTION_COUNT; i++) {
-    drawSection(i);
-  }
+function syncLevelView() {
+  rebuildCanvases();
+  drawActiveLevel();
 }
 
-function setLocalStorageFromState() {
+function buildData() {
+  return {
+    version: 2,
+    sourceSectionWidth: SOURCE_SECTION_WIDTH,
+    levels: state.levels.map((level, levelIndex) => ({
+      id: level.id,
+      title: level.title,
+      subtitle: level.subtitle,
+      backgroundPath: level.backgroundPath,
+      sourceSectionHeight: level.sourceSectionHeight,
+      segments: deepClone(level.segments),
+      terrainProfiles: level.terrainSamples.map((samples, sectionIndex) =>
+        samplesToPoints(samples, levelHeight(levelIndex, sectionIndex))
+      ),
+      solidSpans: deepClone(level.solidSpans)
+    }))
+  };
+}
+
+async function saveToSQLiteAndLocalStorage() {
   const data = buildData();
   const json = JSON.stringify(data, null, 2);
+
+  try {
+    const response = await fetch('/api/terrain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json
+    });
+    if (response.ok) {
+      setStatus('Salvato in SQLite + localStorage');
+    }
+  } catch {
+    setStatus('SQLite non disponibile, salvo solo in localStorage');
+  }
+
   window.localStorage.setItem(STORAGE_KEY, json);
   state.lastJson = json;
   state.dirty = false;
-  setStatus('Salvato nel gioco');
 }
 
 function downloadJson() {
@@ -489,16 +749,33 @@ async function copyJson() {
 
 async function loadTerrainFromSource(data) {
   const normalized = normalizeTerrainData(data);
-  state.terrainSamples = normalized.terrainProfiles.map((points) =>
-    pointsToSamples(points, SOURCE_SECTION_HEIGHT * 0.84)
-  );
-  state.solidSpans = normalized.solidSpans.map((spans) => deepClone(spans));
-  state.dirty = false;
+  state.levels = normalized.levels.map((level, index) => ({
+    ...LEVEL_CONFIGS[index],
+    ...level,
+    terrainSamples: level.terrainProfiles.map((points, sectionIndex) =>
+      pointsToSamples(points, levelHeight(index, sectionIndex))
+    )
+  }));
   state.lastJson = JSON.stringify(buildData(), null, 2);
-  renderAll();
+  state.dirty = false;
+  syncLevelView();
 }
 
 async function loadInitialTerrain() {
+  try {
+    const response = await fetch('/api/terrain', { cache: 'no-store' });
+    if (response.ok) {
+      const data = await response.json();
+    if (data) {
+      await loadTerrainFromSource(data);
+      setStatus('Caricato da SQLite');
+      return;
+      }
+    }
+  } catch {
+    // fall through to localStorage
+  }
+
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try {
@@ -506,7 +783,7 @@ async function loadInitialTerrain() {
       setStatus('Caricato da localStorage');
       return;
     } catch {
-      // fall through to asset/defaults
+      // fall through
     }
   }
 
@@ -521,36 +798,39 @@ async function loadInitialTerrain() {
     // fall through
   }
 
-  await loadTerrainFromSource(DEFAULT_TERRAIN_DATA);
+  await loadTerrainFromSource({ levels: DEFAULT_LEVEL_DATA });
   setStatus('Caricato da valori predefiniti');
 }
 
 function pointerToSectionAction(event, canvas) {
-  const sectionIndex = sectionFromCanvas(canvas);
-  const point = getCanvasPoint(event, canvas);
-  const sourceX = clamp(point.x, 0, SOURCE_SECTION_WIDTH);
-  const sourceY = clamp(point.y, 0, SOURCE_SECTION_HEIGHT);
-  return { sectionIndex, sourceX, sourceY };
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: clamp(((event.clientX - rect.left) / rect.width) * canvas.width, 0, canvas.width),
+    y: clamp(((event.clientY - rect.top) / rect.height) * canvas.height, 0, canvas.height)
+  };
 }
 
 function installCanvasEvents(canvas) {
-  const sectionIndex = sectionFromCanvas(canvas);
+  const levelIndex = Number(canvas.dataset.level || 0);
+  const sectionIndex = Number(canvas.dataset.section || 0);
+
   canvas.addEventListener('pointerdown', (event) => {
     event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
-    const { sourceX, sourceY } = pointerToSectionAction(event, canvas);
+    const { x, y } = pointerToSectionAction(event, canvas);
     state.drag = {
+      levelIndex,
       sectionIndex,
       pointerId: event.pointerId,
       mode: state.mode,
-      startX: sourceX,
-      lastX: sourceX,
-      lastY: sourceY
+      startX: x,
+      lastX: x,
+      lastY: y
     };
     if (state.mode === 'terrain') {
-      paintTerrain(sectionIndex, sourceX, sourceY);
+      paintTerrain(levelIndex, sectionIndex, x, y);
       state.dirty = true;
-      renderAll();
+      drawActiveLevel();
     }
   });
 
@@ -559,13 +839,13 @@ function installCanvasEvents(canvas) {
       return;
     }
     event.preventDefault();
-    const { sourceX, sourceY } = pointerToSectionAction(event, canvas);
+    const { x, y } = pointerToSectionAction(event, canvas);
     if (state.drag.mode === 'terrain') {
-      paintTerrain(sectionIndex, sourceX, sourceY, state.drag.lastX, state.drag.lastY);
-      state.drag.lastX = sourceX;
-      state.drag.lastY = sourceY;
+      paintTerrain(levelIndex, sectionIndex, x, y, state.drag.lastX, state.drag.lastY);
+      state.drag.lastX = x;
+      state.drag.lastY = y;
       state.dirty = true;
-      renderAll();
+      drawActiveLevel();
     }
   });
 
@@ -574,15 +854,15 @@ function installCanvasEvents(canvas) {
       return;
     }
     event.preventDefault();
-    const { sourceX } = pointerToSectionAction(event, canvas);
+    const { x } = pointerToSectionAction(event, canvas);
     if (state.drag.mode === 'gap') {
-      addGap(sectionIndex, state.drag.startX, sourceX);
+      addGap(levelIndex, sectionIndex, state.drag.startX, x);
       state.dirty = true;
-      renderAll();
+      drawActiveLevel();
     } else if (state.drag.mode === 'erase') {
-      addSolidRange(sectionIndex, state.drag.startX, sourceX);
+      addSolidRange(levelIndex, sectionIndex, state.drag.startX, x);
       state.dirty = true;
-      renderAll();
+      drawActiveLevel();
     }
     state.drag = null;
   });
@@ -592,21 +872,32 @@ function installCanvasEvents(canvas) {
   });
 }
 
-els.terrain.addEventListener('click', () => setMode('terrain'));
-els.gap.addEventListener('click', () => setMode('gap'));
-els.erase.addEventListener('click', () => setMode('erase'));
-els.saveLocal.addEventListener('click', setLocalStorageFromState);
-els.download.addEventListener('click', downloadJson);
-els.copy.addEventListener('click', () => {
+async function resetAll() {
+  try {
+    await fetch('/api/terrain', { method: 'DELETE' });
+  } catch {
+    // ignore
+  }
+  window.localStorage.removeItem(STORAGE_KEY);
+  await loadTerrainFromSource({ levels: DEFAULT_LEVEL_DATA });
+  setStatus('Ripristinato ai valori predefiniti');
+}
+
+elements.terrain.addEventListener('click', () => setMode('terrain'));
+elements.gap.addEventListener('click', () => setMode('gap'));
+elements.erase.addEventListener('click', () => setMode('erase'));
+elements.saveLocal.addEventListener('click', () => {
+  saveToSQLiteAndLocalStorage().catch(() => setStatus('Salvataggio non disponibile'));
+});
+elements.download.addEventListener('click', downloadJson);
+elements.copy.addEventListener('click', () => {
   copyJson().catch(() => setStatus('Copia non disponibile'));
 });
-els.reset.addEventListener('click', () => {
-  window.localStorage.removeItem(STORAGE_KEY);
-  clearAll();
-  setStatus('Ripristinato ai valori predefiniti');
+elements.reset.addEventListener('click', () => {
+  resetAll().catch(() => setStatus('Reset non disponibile'));
 });
-els.import.addEventListener('change', async () => {
-  const file = els.import.files?.[0];
+elements.import.addEventListener('change', async () => {
+  const file = elements.import.files?.[0];
   if (!file) {
     return;
   }
@@ -615,11 +906,24 @@ els.import.addEventListener('change', async () => {
   setStatus('Importato da file');
 });
 
-for (const canvas of canvases) {
-  installCanvasEvents(canvas);
+elements.levelButtons.forEach((button, index) => {
+  button.addEventListener('click', () => setActiveLevel(index));
+});
+
+async function init() {
+  const config = await loadEditorConfig();
+  if (config) {
+    applyConfigStripPaths(config);
+  }
+
+  for (let i = 0; i < LEVEL_CONFIGS.length; i++) {
+    await loadBackgroundImages(i);
+  }
+
+  await loadInitialTerrain();
+  setMode('terrain');
+  setActiveLevel(0);
+  syncLevelView();
 }
 
-setMode('terrain');
-loadInitialTerrain().then(() => {
-  renderAll();
-});
+init();

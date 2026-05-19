@@ -45,21 +45,24 @@ const stars = Array.from({ length: 34 }, (_, i) => ({
 }));
 
 const LEVEL_IMAGE_PATH = './level.png';
-const LEVEL_SEGMENTS = [
+const DEFAULT_LEVEL_SEGMENTS = [
   { sy: 0, sh: 341 },
   { sy: 341, sh: 341 },
   { sy: 682, sh: 342 }
 ];
+let LEVEL_SEGMENTS = DEFAULT_LEVEL_SEGMENTS.map((segment) => ({ ...segment }));
 const LEVEL_SOURCE_SECTION_WIDTH = 1536;
-const LEVEL_SOURCE_SECTION_HEIGHT = 341;
+let LEVEL_SOURCE_SECTION_HEIGHT = 341;
 const LEVEL_GROUND_SOURCE_Y = 287;
 const LEVEL_BAND_Y = 180;
-const LEVEL_BAND_HEIGHT = 1050;
-const LEVEL_SCALE = LEVEL_BAND_HEIGHT / LEVEL_SOURCE_SECTION_HEIGHT;
-const LEVEL_SECTION_WIDTH = Math.round(LEVEL_SOURCE_SECTION_WIDTH * LEVEL_SCALE);
-const WORLD_WIDTH = LEVEL_SECTION_WIDTH * LEVEL_SEGMENTS.length;
+const DEFAULT_LEVEL_BAND_HEIGHT = 1050;
+let LEVEL_BAND_HEIGHT = DEFAULT_LEVEL_BAND_HEIGHT;
+let LEVEL_SCALE = LEVEL_BAND_HEIGHT / LEVEL_SOURCE_SECTION_HEIGHT;
+let LEVEL_SECTION_WIDTH = Math.round(LEVEL_SOURCE_SECTION_WIDTH * LEVEL_SCALE);
+let WORLD_WIDTH = LEVEL_SECTION_WIDTH * LEVEL_SEGMENTS.length;
 const SEGMENT_WIDTH = LEVEL_SECTION_WIDTH;
-const GROUND_Y = LEVEL_BAND_Y + Math.round(LEVEL_GROUND_SOURCE_Y * LEVEL_SCALE) + 50;
+let GROUND_Y = LEVEL_BAND_Y + Math.round(LEVEL_GROUND_SOURCE_Y * LEVEL_SCALE) + 50;
+const LEVEL_EDGE_SOLID_GRACE = 220;
 const DEFAULT_TERRAIN_PROFILES = [
   [
     { x: 0, y: 298 },
@@ -173,6 +176,9 @@ const DEFAULT_CONFIG = {
     { dx: 128, dy: 22 },
     { dx: 172, dy: 6 }
   ],
+  enemies: {
+    perSection: [2, 1, 2]
+  },
   collectibles: [
     { section: 0, x: 220, y: 954 },
     { section: 0, x: 520, y: 928 },
@@ -195,6 +201,164 @@ const characterMeta = {
 };
 
 let config = structuredClone(DEFAULT_CONFIG);
+let levelDefinitions = [];
+let loadedTerrainData = null;
+
+function cloneCollectibles(items, flipX = false) {
+  return items.map((item) => ({
+    section: Number(item.section) || 0,
+    x: flipX ? LEVEL_SOURCE_SECTION_WIDTH - (Number(item.x) || 0) : Number(item.x) || 0,
+    y: Number(item.y) || 0,
+    taken: false
+  }));
+}
+
+function normalizeLevelSegments(segments, fallbackSegments) {
+  const source = Array.isArray(segments) && segments.length ? segments : fallbackSegments;
+  return source.map((segment) => ({
+    sy: Math.max(0, Math.floor(Number(segment.sy) || 0)),
+    sh: Math.max(1, Math.floor(Number(segment.sh) || 1))
+  }));
+}
+
+function padLevelSections(sections, count, fallbackSectionFactory) {
+  const output = Array.isArray(sections) ? sections.map((section) => section) : [];
+  while (output.length < count) {
+    const seed = output[output.length - 1] || fallbackSectionFactory(output.length);
+    output.push(Array.isArray(seed) ? seed.map((point) => ({ ...point })) : seed);
+  }
+  return output.slice(0, count);
+}
+
+function normalizeLevelEntry(entry, fallback, index) {
+  const sourceCollectibles = Array.isArray(entry?.collectibles) && entry.collectibles.length
+    ? entry.collectibles
+    : fallback.collectibles;
+  const segments = normalizeLevelSegments(entry?.segments, fallback.segments);
+  const stripPaths = Array.isArray(entry?.stripPaths) && entry.stripPaths.length
+    ? entry.stripPaths
+    : fallback.stripPaths;
+  const terrainProfiles = padLevelSections(
+    Array.isArray(entry?.terrainProfiles) && entry.terrainProfiles.length
+      ? entry.terrainProfiles
+      : fallback.terrainProfiles,
+    segments.length,
+    (sectionIndex) => fallback.terrainProfiles[Math.min(sectionIndex, fallback.terrainProfiles.length - 1)]
+  );
+  const solidSpans = padLevelSections(
+    Array.isArray(entry?.solidSpans) && entry.solidSpans.length
+      ? entry.solidSpans
+      : fallback.solidSpans,
+    segments.length,
+    (sectionIndex) => fallback.solidSpans[Math.min(sectionIndex, fallback.solidSpans.length - 1)]
+  );
+  return {
+    id: entry?.id || `level-${index + 1}`,
+    title: entry?.title || `Livello ${index + 1}`,
+    subtitle: entry?.subtitle || (index === 0 ? 'Prima serie di schermate' : 'Nuova serie di schermate'),
+    stripPaths,
+    backgroundPath: stripPaths[0] || entry?.backgroundPath || fallback.backgroundPath || LEVEL_IMAGE_PATH,
+    bandHeight: Number(entry?.bandHeight) || fallback.bandHeight || DEFAULT_LEVEL_BAND_HEIGHT,
+    segments,
+    terrainProfiles: cloneTerrainProfiles(terrainProfiles),
+    solidSpans: cloneTerrainSpans(solidSpans),
+    collectibles: cloneCollectibles(sourceCollectibles, Boolean(entry?.mirrorCollectibles)),
+    enemyCounts: Array.isArray(entry?.enemyCounts) && entry.enemyCounts.length
+      ? entry.enemyCounts.map((value) => Math.max(0, Math.floor(Number(value) || 0)))
+      : (fallback.enemyCounts || []).slice(),
+    startMessage: entry?.startMessage || (index === 0 ? DEFAULT_CONFIG.game.startMessage : 'Secondo livello: continua verso destra'),
+  };
+}
+
+function buildLevelDefinitions(loadedConfig) {
+  const defaultSegments = DEFAULT_LEVEL_SEGMENTS.map((segment) => ({ ...segment }));
+  const terrainLevels = Array.isArray(loadedTerrainData?.levels) && loadedTerrainData.levels.length
+    ? loadedTerrainData.levels
+    : null;
+  const terrainFallbackForIndex = (index) => {
+    if (terrainLevels?.[index]) {
+      return terrainLevels[index];
+    }
+    const first = terrainLevels?.[0];
+    return first || {
+      terrainProfiles: cloneTerrainProfiles(TERRAIN_PROFILES),
+      solidSpans: cloneTerrainSpans(TERRAIN_SOLID_SPANS),
+      sourceSectionHeight: LEVEL_SOURCE_SECTION_HEIGHT
+    };
+  };
+  const fallbackLevel = {
+    backgroundPath: LEVEL_IMAGE_PATH,
+    stripPaths: [
+      './level_strip_0.png',
+      './level_strip_1.png',
+      './level_strip_2.png'
+    ],
+    bandHeight: DEFAULT_LEVEL_BAND_HEIGHT,
+    segments: defaultSegments,
+    terrainProfiles: terrainFallbackForIndex(0).terrainProfiles,
+    solidSpans: terrainFallbackForIndex(0).solidSpans,
+    collectibles: Array.isArray(loadedConfig?.collectibles) && loadedConfig.collectibles.length
+      ? loadedConfig.collectibles
+      : DEFAULT_CONFIG.collectibles,
+    enemyCounts: Array.isArray(loadedConfig?.enemies?.perSection) && loadedConfig.enemies.perSection.length
+      ? loadedConfig.enemies.perSection
+      : DEFAULT_CONFIG.enemies.perSection
+  };
+
+  const explicitLevels = Array.isArray(loadedConfig?.levels) && loadedConfig.levels.length
+    ? loadedConfig.levels
+    : null;
+
+  if (explicitLevels) {
+    return explicitLevels.map((entry, index) => normalizeLevelEntry(entry, fallbackLevel, index));
+  }
+
+  return [
+    normalizeLevelEntry({
+      id: 'level-1',
+      title: 'Livello 1',
+      subtitle: 'Prima serie di schermate',
+      backgroundPath: LEVEL_IMAGE_PATH,
+      stripPaths: [
+        './level_strip_0.png',
+        './level_strip_1.png',
+        './level_strip_2.png'
+      ],
+      bandHeight: DEFAULT_LEVEL_BAND_HEIGHT,
+      segments: defaultSegments,
+      terrainProfiles: terrainFallbackForIndex(0).terrainProfiles,
+      solidSpans: terrainFallbackForIndex(0).solidSpans,
+      collectibles: fallbackLevel.collectibles,
+      enemyCounts: fallbackLevel.enemyCounts,
+      startMessage: DEFAULT_CONFIG.game.startMessage
+    }, fallbackLevel, 0),
+    normalizeLevelEntry({
+      id: 'level-2',
+      title: 'Livello 2',
+      subtitle: 'Seconda serie di schermate',
+      backgroundPath: './level2_strip_0.png',
+      stripPaths: [
+        './level2_strip_0.png',
+        './level2_strip_1.png',
+        './level2_strip_2.png',
+        './level2_strip_3.png'
+      ],
+      bandHeight: DEFAULT_LEVEL_BAND_HEIGHT,
+      segments: [
+        { sy: 0, sh: 256 },
+        { sy: 256, sh: 256 },
+        { sy: 512, sh: 256 },
+        { sy: 768, sh: 256 }
+      ],
+      terrainProfiles: terrainFallbackForIndex(1).terrainProfiles,
+      solidSpans: terrainFallbackForIndex(1).solidSpans,
+      collectibles: fallbackLevel.collectibles,
+      enemyCounts: fallbackLevel.enemyCounts,
+      mirrorCollectibles: true,
+      startMessage: 'Secondo livello: continua verso destra'
+    }, fallbackLevel, 1)
+  ];
+}
 
 function spritePaths(name) {
   return {
@@ -213,11 +377,32 @@ function spritePaths(name) {
   };
 }
 
+function enemySpritePaths(name) {
+  return {
+    right: {
+      idle: `./assets/character-sprites/${name}/idle_right.png`,
+      walk: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/walk_right_${index + 1}.png`),
+      jump: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/jump_right_${index + 1}.png`)
+    },
+    left: {
+      idle: `./assets/character-sprites/${name}/idle_left.png`,
+      walk: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/walk_left_${index + 1}.png`),
+      jump: Array.from({ length: 3 }, (_, index) => `./assets/character-sprites/${name}/jump_left_${index + 1}.png`)
+    }
+  };
+}
+
 const SPRITE_PATHS = {
   dad: spritePaths('dad'),
   mom: spritePaths('mom'),
   kid: spritePaths('kid'),
   teen: spritePaths('teen')
+};
+
+const ENEMY_SPRITE_PATHS = {
+  banditi: enemySpritePaths('banditi'),
+  uomini_in_giacca: enemySpritePaths('uomini_in_giacca'),
+  ragazzini_bulli: enemySpritePaths('ragazzini_bulli')
 };
 
 const sprites = Object.fromEntries(
@@ -231,8 +416,66 @@ const sprites = Object.fromEntries(
   ])
 );
 
-const levelImage = new Image();
-let levelReady = false;
+const enemySprites = Object.fromEntries(
+  Object.keys(ENEMY_SPRITE_PATHS).map((name) => [
+    name,
+    {
+      right: { idle: null, walk: [], jump: [] },
+      left: { idle: null, walk: [], jump: [] },
+      ready: false
+    }
+  ])
+);
+
+const ENEMY_TYPES = [
+  {
+    key: 'banditi',
+    label: 'Banditi',
+    sprite: 'banditi',
+    scale: 1.34,
+    bob: 2.0,
+    speed: 330,
+    aggroRange: 900,
+    hitRadius: 90,
+    attackWindup: 0.22,
+    attackDuration: 0.42,
+    attackCooldown: 0.55,
+    attackImpactAt: 0.17,
+    attackKnockback: 620
+  },
+  {
+    key: 'uomini_in_giacca',
+    label: 'Uomini in Giacca',
+    sprite: 'uomini_in_giacca',
+    scale: 1.45,
+    bob: 1.8,
+    speed: 280,
+    aggroRange: 840,
+    hitRadius: 98,
+    attackWindup: 0.42,
+    attackDuration: 0.66,
+    attackCooldown: 0.95,
+    attackImpactAt: 0.34,
+    attackKnockback: 840
+  },
+  {
+    key: 'ragazzini_bulli',
+    label: 'Ragazzini Bulli',
+    sprite: 'ragazzini_bulli',
+    scale: 1.28,
+    bob: 2.2,
+    speed: 360,
+    aggroRange: 780,
+    hitRadius: 84,
+    attackWindup: 0.16,
+    attackDuration: 0.34,
+    attackCooldown: 0.42,
+    attackImpactAt: 0.11,
+    attackKnockback: 560
+  }
+];
+
+const levelBackgrounds = new Map();
 
 let lastTime = 0;
 
@@ -268,6 +511,7 @@ const game = {
   walkPhase: 0,
   worldWidth: LEVEL_SECTION_WIDTH,
   cameraX: 0,
+  currentLevelIndex: 0,
   currentSection: 0,
   checkpointSection: 0,
   checkpointX: 220,
@@ -278,7 +522,9 @@ const game = {
   lastCheckpointSoundX: 220,
   family: [],
   collectibles: [],
-  floatingTexts: []
+  particles: [],
+  enemies: [],
+  enemyHitCooldown: 0
 };
 
 // Physics constants (computed from config in applyConfig)
@@ -301,6 +547,7 @@ let FALL_RESET_Y = HEIGHT + 260; // Default, updated in applyConfig
 let SECTION_START_X = 220;
 let SECTION_END_X_OFFSET = 180;
 let SECTION_END_X = LEVEL_SECTION_WIDTH - 180; // Default, updated in applyConfig
+let SECTION_END_VISUAL_X = LEVEL_SECTION_WIDTH - 180;
 let OVERLAY_FADE_SPEED = 4;
 let OVERLAY_MAX_ALPHA = 0.78;
 
@@ -327,6 +574,14 @@ function mergeConfig(loadedConfig) {
     formation: Array.isArray(loadedConfig.formation) && loadedConfig.formation.length
       ? loadedConfig.formation
       : DEFAULT_CONFIG.formation,
+    enemies: {
+      perSection: Array.isArray(loadedConfig.enemies?.perSection) && loadedConfig.enemies.perSection.length
+        ? loadedConfig.enemies.perSection
+        : DEFAULT_CONFIG.enemies.perSection
+    },
+    levels: Array.isArray(loadedConfig.levels) && loadedConfig.levels.length
+      ? loadedConfig.levels
+      : null,
     collectibles: Array.isArray(loadedConfig.collectibles) && loadedConfig.collectibles.length
       ? loadedConfig.collectibles
       : DEFAULT_CONFIG.collectibles
@@ -347,7 +602,7 @@ async function loadConfig() {
 
 function applyConfig(loadedConfig) {
   config = mergeConfig(loadedConfig);
-  game.totalGems = Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
+  game.totalGems = levelDefinitions.reduce((total, level) => total + (level.collectibles?.length || 0), 0) || Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
   game.lives = Number(config.game.startLives) || DEFAULT_CONFIG.game.startLives;
   game.timer = Number(config.game.timerSeconds) || DEFAULT_CONFIG.game.timerSeconds;
   game.message = config.game.startMessage || DEFAULT_CONFIG.game.startMessage;
@@ -385,6 +640,7 @@ function applyConfig(loadedConfig) {
   SECTION_START_X = Number(config.display.sectionStartX) || DEFAULT_CONFIG.display.sectionStartX;
   SECTION_END_X_OFFSET = Number(config.display.sectionEndXOffset) || DEFAULT_CONFIG.display.sectionEndXOffset;
   SECTION_END_X = LEVEL_SECTION_WIDTH - SECTION_END_X_OFFSET;
+  SECTION_END_VISUAL_X = SECTION_END_X;
   OVERLAY_FADE_SPEED = Number(config.display.overlayFadeSpeed) || DEFAULT_CONFIG.display.overlayFadeSpeed;
   OVERLAY_MAX_ALPHA = Number(config.display.overlayMaxAlpha) || DEFAULT_CONFIG.display.overlayMaxAlpha;
 
@@ -416,6 +672,11 @@ function applyConfig(loadedConfig) {
     description: 'Tutti insieme: il gioco usa l intero gruppo',
     stats: [6, 6, 5, 6]
   });
+
+  levelDefinitions = buildLevelDefinitions(config);
+  game.levelCount = levelDefinitions.length;
+  game.totalGems = levelDefinitions.reduce((total, level) => total + (level.collectibles?.length || 0), 0) || Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
+  game.currentLevelIndex = clamp(game.currentLevelIndex || 0, 0, Math.max(0, levelDefinitions.length - 1));
 }
 
 function pxText(text, x, y, color = palette.white, scale = 1, align = 'left') {
@@ -439,6 +700,13 @@ function pixelRect(x, y, w, h, c) {
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
+}
+
+function approach(value, target, delta) {
+  if (value < target) {
+    return Math.min(value + delta, target);
+  }
+  return Math.max(value - delta, target);
 }
 
 function cloneTerrainProfiles(profiles) {
@@ -564,21 +832,32 @@ async function loadSprites() {
   }));
 }
 
-function loadLevelBackground() {
-  return new Promise((resolve) => {
-    levelImage.onload = () => {
-      levelReady = true;
-      resolve();
-    };
-    levelImage.onerror = () => {
-      levelReady = false;
-      resolve();
-    };
-    levelImage.src = LEVEL_IMAGE_PATH;
-  });
+async function loadEnemySprites() {
+  const entries = Object.entries(ENEMY_SPRITE_PATHS);
+  await Promise.all(entries.map(async ([name, config]) => {
+    const [right, left] = await Promise.all([
+      loadSpriteState(config.right),
+      loadSpriteState(config.left)
+    ]);
+    enemySprites[name].right = right;
+    enemySprites[name].left = left;
+    enemySprites[name].ready = Boolean(right.idle || left.idle);
+  }));
 }
 
-function normalizeTerrainData(data) {
+async function loadLevelBackgrounds() {
+  levelBackgrounds.clear();
+  await Promise.all(levelDefinitions.map(async (level) => {
+    const stripImages = await Promise.all((level.stripPaths || []).map((path) => loadImage(path)));
+    const ready = stripImages.some((image) => Boolean(image?.naturalWidth));
+    levelBackgrounds.set(level.id, {
+      stripImages,
+      ready
+    });
+  }));
+}
+
+function normalizeTerrainSectionData(data, fallbackProfiles, fallbackSpans, sourceHeight = LEVEL_SOURCE_SECTION_HEIGHT) {
   const sections = Array.isArray(data?.terrainProfiles)
     ? data.terrainProfiles
     : Array.isArray(data?.profiles)
@@ -590,10 +869,10 @@ function normalizeTerrainData(data) {
     const section = Array.isArray(sections[index]) ? sections[index] : [];
     const points = section.map((point) => ({
       x: clamp(Number(point.x) || 0, 0, LEVEL_SOURCE_SECTION_WIDTH),
-      y: clamp(Number(point.y) || LEVEL_GROUND_SOURCE_Y, 0, LEVEL_SOURCE_SECTION_HEIGHT)
+      y: clamp(Number(point.y) || sourceHeight, 0, sourceHeight)
     }));
     if (!points.length) {
-      return cloneTerrainProfiles([DEFAULT_TERRAIN_PROFILES[index] || DEFAULT_TERRAIN_PROFILES[0]])[0];
+      return cloneTerrainProfiles([fallbackProfiles[index] || fallbackProfiles[0]])[0];
     }
     points.sort((a, b) => a.x - b.x);
     if (points[0].x !== 0) {
@@ -632,32 +911,88 @@ function normalizeTerrainData(data) {
   };
 }
 
+function normalizeTerrainData(data) {
+  if (Array.isArray(data?.levels) && data.levels.length) {
+    return {
+      levels: data.levels.map((level, index) => {
+        const sourceHeight = Number(level?.sourceSectionHeight) || Number(level?.segments?.[0]?.sh) || LEVEL_SOURCE_SECTION_HEIGHT;
+        const fallbackProfiles = cloneTerrainProfiles(DEFAULT_TERRAIN_PROFILES);
+        const fallbackSpans = cloneTerrainSpans(DEFAULT_TERRAIN_SOLID_SPANS);
+        const normalized = normalizeTerrainSectionData(level, fallbackProfiles, fallbackSpans, sourceHeight);
+        return {
+          id: level?.id || `level-${index + 1}`,
+          backgroundPath: level?.backgroundPath || null,
+          sourceSectionHeight: sourceHeight,
+          terrainProfiles: normalized.terrainProfiles,
+          solidSpans: normalized.solidSpans
+        };
+      })
+    };
+  }
+
+  const fallbackProfiles = cloneTerrainProfiles(DEFAULT_TERRAIN_PROFILES);
+  const fallbackSpans = cloneTerrainSpans(DEFAULT_TERRAIN_SOLID_SPANS);
+  const normalized = normalizeTerrainSectionData(data, fallbackProfiles, fallbackSpans, LEVEL_SOURCE_SECTION_HEIGHT);
+  return {
+    terrainProfiles: normalized.terrainProfiles,
+    solidSpans: normalized.solidSpans
+  };
+}
+
 function applyTerrainData(data) {
   const normalized = normalizeTerrainData(data);
+  loadedTerrainData = normalized;
+  if (Array.isArray(normalized.levels) && normalized.levels.length) {
+    TERRAIN_PROFILES = cloneTerrainProfiles(normalized.levels[0].terrainProfiles);
+    TERRAIN_SOLID_SPANS = cloneTerrainSpans(normalized.levels[0].solidSpans);
+    return;
+  }
   TERRAIN_PROFILES = cloneTerrainProfiles(normalized.terrainProfiles);
   TERRAIN_SOLID_SPANS = cloneTerrainSpans(normalized.solidSpans);
 }
 
 async function loadTerrainData() {
+  // Priority 1: Try loading from SQLite via API
+  try {
+    const response = await fetch('/api/terrain', { cache: 'no-store' });
+    if (response.ok) {
+      const terrainData = await response.json();
+      if (terrainData) {
+        applyTerrainData(terrainData);
+        console.log('Terrain loaded from SQLite');
+        return;
+      }
+    }
+  } catch (error) {
+    // SQLite API not available, fall through to localStorage
+    console.log('SQLite not available, falling back to localStorage');
+  }
+
+  // Priority 2: Try loading from localStorage
   const fromStorage = window.localStorage.getItem(TERRAIN_STORAGE_KEY);
   if (fromStorage) {
     try {
       applyTerrainData(JSON.parse(fromStorage));
+      console.log('Terrain loaded from localStorage');
       return;
     } catch {
       // Ignore malformed local edits.
     }
   }
 
+  // Priority 3: Fallback to terrain.json asset file
   try {
     const response = await fetch('./assets/terrain.json', { cache: 'no-store' });
     if (response.ok) {
       applyTerrainData(await response.json());
+      console.log('Terrain loaded from assets/terrain.json');
       return;
     }
   } catch {
     // Ignore fetch errors and keep defaults.
   }
+
+  console.log('Using default terrain');
 }
 
 function getSpriteFrame(sprite, member) {
@@ -677,6 +1012,10 @@ function getSpriteFrame(sprite, member) {
       return jumpFrames[0];
     }
     return member.vy < 0 ? jumpFrames[0] : jumpFrames[1] || jumpFrames[0];
+  }
+
+  if (member.action === 'attack') {
+    return states.jump[0] || states.walk[0] || states.idle;
   }
 
   if (Math.abs(member.vx) > 30 && states.walk.length) {
@@ -712,6 +1051,10 @@ function getTerrainSurfaceAt(localX, sectionIndex = game.currentSection) {
   const solidSpan = TERRAIN_SOLID_SPANS[clampedSection] || [];
   const supported = solidSpan.some((span) => sourceX >= span.from && sourceX <= span.to);
   if (!supported) {
+    if (sourceX >= LEVEL_SOURCE_SECTION_WIDTH - LEVEL_EDGE_SOLID_GRACE) {
+      const sourceY = sampleTerrainSourceY(TERRAIN_PROFILES[clampedSection], LEVEL_SOURCE_SECTION_WIDTH - 1);
+      return LEVEL_BAND_Y + Math.round(sourceY * LEVEL_SCALE);
+    }
     return null;
   }
   const sourceY = sampleTerrainSourceY(TERRAIN_PROFILES[clampedSection], sourceX);
@@ -723,13 +1066,118 @@ function getTerrainYAt(localX, sectionIndex = game.currentSection) {
   return surfaceY ?? (LEVEL_BAND_Y + Math.round(LEVEL_GROUND_SOURCE_Y * LEVEL_SCALE) + 50);
 }
 
+function getCurrentLevelDefinition(levelIndex = game.currentLevelIndex) {
+  return levelDefinitions[clamp(levelIndex, 0, Math.max(0, levelDefinitions.length - 1))] || null;
+}
+
+function applyLevelLayout(level) {
+  if (!level) {
+    return;
+  }
+  LEVEL_BAND_HEIGHT = Number(level.bandHeight) || DEFAULT_LEVEL_BAND_HEIGHT;
+  LEVEL_SEGMENTS = normalizeLevelSegments(level.segments, DEFAULT_LEVEL_SEGMENTS);
+  LEVEL_SOURCE_SECTION_HEIGHT = LEVEL_SEGMENTS[0]?.sh || 341;
+  LEVEL_SCALE = LEVEL_BAND_HEIGHT / LEVEL_SOURCE_SECTION_HEIGHT;
+  LEVEL_SECTION_WIDTH = Math.round(LEVEL_SOURCE_SECTION_WIDTH * LEVEL_SCALE);
+  WORLD_WIDTH = LEVEL_SECTION_WIDTH * LEVEL_SEGMENTS.length;
+  GROUND_Y = LEVEL_BAND_Y + Math.round(LEVEL_GROUND_SOURCE_Y * LEVEL_SCALE) + 50;
+  SECTION_END_X = LEVEL_SECTION_WIDTH - SECTION_END_X_OFFSET;
+  SECTION_END_VISUAL_X = SECTION_END_X;
+  game.worldWidth = WORLD_WIDTH;
+}
+
+function applyLevelTerrain(level) {
+  if (!level) {
+    return;
+  }
+  TERRAIN_PROFILES = cloneTerrainProfiles(level.terrainProfiles || DEFAULT_TERRAIN_PROFILES);
+  TERRAIN_SOLID_SPANS = cloneTerrainSpans(level.solidSpans || DEFAULT_TERRAIN_SOLID_SPANS);
+}
+
 function seedCollectibles() {
-  game.collectibles = config.collectibles.map((item) => ({
+  const level = getCurrentLevelDefinition();
+  game.collectibles = (level?.collectibles || config.collectibles).map((item) => ({
     section: Number(item.section) || 0,
     x: Number(item.x) || 0,
     y: Number(item.y) || 0,
     taken: false
   }));
+}
+
+function randomRange(min, max) {
+  return min + Math.random() * Math.max(0, max - min);
+}
+
+function findEnemySpawnX(sectionIndex, minDistanceFromStart = 900) {
+  const safeMinX = Math.max(minDistanceFromStart, 0);
+  const safeMaxX = Math.max(safeMinX, SECTION_END_X - 60);
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const candidateX = randomRange(safeMinX, safeMaxX);
+    if (getTerrainSurfaceAt(candidateX, sectionIndex) !== null) {
+      return candidateX;
+    }
+  }
+
+  for (let x = safeMinX; x <= safeMaxX; x += 8) {
+    if (getTerrainSurfaceAt(x, sectionIndex) !== null) {
+      return x;
+    }
+  }
+
+  return safeMaxX;
+}
+
+function seedEnemies() {
+  const level = getCurrentLevelDefinition();
+  const enemyCounts = level?.enemyCounts || config.enemies?.perSection || DEFAULT_CONFIG.enemies.perSection;
+  const perSection = Array.from({ length: LEVEL_SEGMENTS.length }, (_, index) => {
+    const value = enemyCounts?.[index];
+    const fallback = DEFAULT_CONFIG.enemies.perSection[index] ?? 0;
+    return Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : fallback;
+  });
+
+  const enemies = [];
+  for (let section = 0; section < perSection.length; section++) {
+    for (let i = 0; i < perSection[section]; i++) {
+      const type = ENEMY_TYPES[Math.floor(Math.random() * ENEMY_TYPES.length)];
+      const x = findEnemySpawnX(section, 900);
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      const speedBase = type.speed + section * 18 + i * 10;
+      enemies.push({
+        section,
+        x,
+        y: getTerrainYAt(x, section),
+        vx: 0,
+        dir,
+        facing: dir,
+        speed: speedBase,
+        sprite: type.sprite,
+        scale: type.scale,
+        bobPhase: Math.random() * 6,
+        grounded: true,
+        type: type.key,
+        typeLabel: type.label,
+        attackWindup: type.attackWindup,
+        attackDuration: type.attackDuration,
+        attackCooldownMax: type.attackCooldown,
+        attackImpactAt: type.attackImpactAt,
+        attackKnockback: type.attackKnockback,
+        aggroRange: type.aggroRange,
+        patrolMin: Math.max(900, x - 320),
+        patrolMax: Math.min(SECTION_END_X, x + 320),
+        hitRadius: type.hitRadius,
+        attackRange: type.hitRadius + 54,
+        attackCooldown: 0,
+        attackTimer: 0,
+        attackLock: false,
+        damageDealt: false,
+        action: 'idle',
+        defeated: false
+      });
+    }
+  }
+
+  game.enemies = enemies;
 }
 
 function updateCamera() {
@@ -804,6 +1252,41 @@ function placeFamilyAtSectionStart(sectionIndex) {
   updateCamera();
 }
 
+function loadLevelState(levelIndex, sectionIndex = 0) {
+  const level = getCurrentLevelDefinition(levelIndex);
+  if (!level) {
+    return;
+  }
+  game.currentLevelIndex = clamp(levelIndex, 0, Math.max(0, levelDefinitions.length - 1));
+  applyLevelLayout(level);
+  applyLevelTerrain(level);
+  game.currentSection = sectionIndex;
+  game.checkpointSection = sectionIndex;
+  game.checkpointX = SECTION_START_X;
+  game.levelTitle = level.title;
+  game.levelSubtitle = level.subtitle;
+  game.message = level.startMessage || config.game.startMessage || DEFAULT_CONFIG.game.startMessage;
+  game.levelBackgroundPath = level.backgroundPath || LEVEL_IMAGE_PATH;
+  placeFamilyAtSectionStart(sectionIndex);
+  seedCollectibles();
+  seedEnemies();
+}
+
+function advanceToNextLevel() {
+  const nextLevelIndex = game.currentLevelIndex + 1;
+  if (nextLevelIndex >= levelDefinitions.length) {
+    game.completed = true;
+    setGameScreen(GAME_SCREENS.WIN);
+    return false;
+  }
+
+  loadLevelState(nextLevelIndex, 0);
+  game.showCenterMessage = true;
+  game.message = `${game.levelTitle} iniziato`;
+  spawnText(game.cameraX + WIDTH / 2, HEIGHT / 2, 'NUOVO LIVELLO!', palette.energy, 1.1);
+  return true;
+}
+
 function setGameScreen(newScreen) {
   game.prevScreen = game.screen;
   game.screen = newScreen;
@@ -845,7 +1328,9 @@ function resetGame() {
   game.combo = 0;
   game.comboTimer = 0;
   game.comboPulse = 0;
-  game.floatingTexts = [];
+  game.particles = [];
+  game.enemies = [];
+  game.enemyHitCooldown = 0;
   game.totalGems = Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
   game.completed = false;
   game.lives = Number(config.game.startLives) || DEFAULT_CONFIG.game.startLives;
@@ -854,10 +1339,10 @@ function resetGame() {
   game.message = config.game.startMessage || DEFAULT_CONFIG.game.startMessage;
   game.showCenterMessage = false;
   game.lastCheckpointSoundX = SECTION_START_X;
-  placeFamilyAtSectionStart(0);
+  game.currentLevelIndex = 0;
+  loadLevelState(0, 0);
   game.jumpLock = false;
   game.jumpBuffer = 0;
-  seedCollectibles();
 }
 
 function confirmCharacterSelection() {
@@ -945,8 +1430,8 @@ function drawBigTree(offsetX = 0) {
   }
 }
 
-function drawSpriteMember(member, t, cameraX = 0) {
-  const sprite = sprites[member.sprite];
+function drawSpriteMember(member, t, cameraX = 0, spriteAtlas = sprites) {
+  const sprite = spriteAtlas[member.sprite];
   const scale = member.scale;
   const frameImage = getSpriteFrame(sprite, member);
   if (!frameImage) {
@@ -1026,14 +1511,14 @@ function getHudMessage() {
 }
 
 function drawHUD(t) {
-  const sectionStars = getSectionStars();
-  const sectionTaken = sectionStars.filter((item) => item.taken).length;
+  const levelCount = Math.max(1, game.levelCount || levelDefinitions.length || 1);
+  const currentLevel = game.currentLevelIndex + 1;
 
   pixelRect(0, 0, WIDTH, 162, '#020816');
   pixelRect(0, 150, WIDTH, 12, palette.hudLine);
 
-  pxText(`AREA ${game.currentSection + 1}/${LEVEL_SEGMENTS.length}`, 40, 24, '#bfe7ff', 0.98);
-  pxText(`QUI ${sectionTaken}/${sectionStars.length}`, 44, 98, '#fff7b8', 0.68);
+  pxText(`LIVELLO ${currentLevel}/${levelCount}`, 40, 24, '#bfe7ff', 0.98);
+  pxText(`AREA ${game.currentSection + 1}/${LEVEL_SEGMENTS.length}`, 40, 98, '#fff7b8', 0.68);
 
   pxText(`STELLE ${game.gemsCollected}/${game.totalGems}`, 388, 24, '#ffe66d', 0.98, 'center');
   pxText(game.completed ? 'COMPLETATO' : 'RACCOGLI', 388, 98, game.completed ? '#8dff8f' : '#ffffff', 0.68, 'center');
@@ -1048,7 +1533,7 @@ function drawHUD(t) {
 
   if (game.combo >= 2) {
     const pulseScale = 0.85 + game.comboPulse * 1.2;
-    pxText(`x${game.combo} COMBO`, WIDTH / 2, 168, palette.gold1, pulseScale, 'center');
+    pxText(`×${game.combo} COMBO`, WIDTH / 2, 168, palette.gold1, pulseScale, 'center');
   }
 }
 
@@ -1066,10 +1551,13 @@ function drawCenterPanel() {
 function drawBottomPanels() {
   const player = game.family[0];
   const scoreDisplay = game.score * game.scoreMultiplier;
-  const distanceRatio = clamp((player.x - SECTION_START_X) / Math.max(1, SECTION_END_X - SECTION_START_X), 0, 1);
+  const distanceRatio = clamp((player.x - SECTION_START_X) / Math.max(1, SECTION_END_VISUAL_X - SECTION_START_X), 0, 1);
   pxText(`PUNTI ${String(scoreDisplay).padStart(4, '0')}`, 952, 1394, '#ffe66d', 0.68, 'center');
   const jumpState = player.grounded ? 'SALTO PRONTO' : 'IN ARIA';
-  const nextGoal = game.currentSection < LEVEL_SEGMENTS.length - 1 ? 'RAGGIUNGI IL BORDO DESTRO' : 'RAGGIUNGI IL TRAGUARDO';
+  const isLastSectionOfLevel = game.currentSection >= LEVEL_SEGMENTS.length - 1;
+  const nextGoal = isLastSectionOfLevel
+    ? (game.currentLevelIndex < (game.levelCount || levelDefinitions.length) - 1 ? 'COMPLETA IL LIVELLO' : 'RAGGIUNGI IL TRAGUARDO')
+    : 'RAGGIUNGI IL BORDO DESTRO';
 
   pixelRect(0, 1298, WIDTH, 142, '#020816');
   pixelRect(0, 1298, WIDTH, 12, palette.hudLine);
@@ -1252,41 +1740,206 @@ function drawCollectibleLayer(t, cameraX = 0) {
   }
 }
 
-function addFloatingText(text, x, y, color = palette.gold1) {
-  game.floatingTexts.push({ text, x, y, color, age: 0, duration: 0.85 });
+function spawnText(x, y, text, color = palette.gold1, scale = 0.7) {
+  game.particles.push({ x, y, text, color, vy: -180, life: 1.2, maxLife: 1.2, scale });
 }
 
-function updateFloatingTexts(dt) {
-  for (const text of game.floatingTexts) {
-    text.age += dt;
-    text.y -= 72 * dt;
+function updateParticles(dt) {
+  for (const p of game.particles) {
+    p.y += p.vy * dt;
+    p.life -= dt;
   }
-  game.floatingTexts = game.floatingTexts.filter((text) => text.age < text.duration);
+  game.particles = game.particles.filter((p) => p.life > 0);
 }
 
-function drawFloatingTexts(cameraX = 0) {
-  for (const text of game.floatingTexts) {
-    const ratio = text.age / text.duration;
-    const scale = 0.58 + Math.sin(ratio * Math.PI) * 0.16;
-    pxText(text.text, text.x - cameraX, text.y, text.color, scale, 'center');
+function drawParticles(cameraX = 0) {
+  ctx.save();
+  for (const p of game.particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    pxText(p.text, p.x - cameraX, p.y, p.color, p.scale, 'center');
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawEnemy(enemy, cameraX = 0) {
+  if (enemy.defeated || enemy.section !== game.currentSection) {
+    return;
+  }
+  drawSpriteMember(enemy, 0, cameraX, enemySprites);
+}
+
+function drawEnemies(cameraX = 0) {
+  for (const enemy of game.enemies) {
+    if (enemy.defeated) {
+      continue;
+    }
+    drawEnemy(enemy, cameraX);
+  }
+}
+
+function updateEnemies(dt, player) {
+  game.enemyHitCooldown = Math.max(0, game.enemyHitCooldown - dt);
+
+  for (const enemy of game.enemies) {
+    if (enemy.defeated || enemy.section !== game.currentSection) {
+      continue;
+    }
+
+    const dx = player.x - enemy.x;
+    const playerClose = Math.abs(dx) < enemy.aggroRange;
+    const desiredDir = Math.sign(dx || enemy.dir || 1);
+    const surfaceY = getTerrainSurfaceAt(enemy.x, enemy.section);
+    const enemyHeight = Math.max(118, (enemy.scale || 1) * 132);
+    const enemyTop = enemy.y - enemyHeight;
+    const stompY = enemyTop + enemyHeight * 0.22;
+    const horizontalOverlap = Math.abs(dx) < Math.max(52, (enemy.scale || 1) * 58);
+
+    if (horizontalOverlap && player.vy >= 0) {
+      const playerWasAbove = (player.prevY ?? player.y) <= stompY;
+      const playerIsLandingOnTop = player.y >= stompY - 24 && player.y <= stompY + 30;
+      if (playerWasAbove && playerIsLandingOnTop) {
+        enemy.defeated = true;
+        player.vy = -JUMP_VELOCITY * 0.55;
+        player.grounded = false;
+        game.score += 2;
+        spawnText(enemy.x, enemy.y - 100, 'KO!', palette.gold1, 0.9);
+        audio.collectStar();
+        continue;
+      }
+    }
+
+    const tryStompOrDamage = () => {
+      const hitRadius = enemy.attackRange || enemy.hitRadius;
+      const canHit = game.enemyHitCooldown <= 0 && dist2(enemy, player) < hitRadius ** 2;
+      if (!canHit) {
+        return false;
+      }
+
+      const playerWasAbove = (player.prevY ?? player.y) <= enemy.y - 26;
+      const playerIsLandingOnTop = player.y <= enemy.y + 30;
+      const stomped = player.vy >= 0 && playerWasAbove && playerIsLandingOnTop;
+      if (stomped) {
+        enemy.defeated = true;
+        player.vy = -JUMP_VELOCITY * 0.55;
+        player.grounded = false;
+        game.score += 2;
+        spawnText(enemy.x, enemy.y - 100, 'KO!', palette.gold1, 0.9);
+        audio.collectStar();
+        return true;
+      }
+
+      enemy.damageDealt = true;
+      game.enemyHitCooldown = 1.0;
+      game.lives -= 1;
+      player.vx += (enemy.facing || enemy.dir || 1) * (enemy.attackKnockback || 650);
+      player.vy = -720;
+      player.grounded = false;
+      spawnText(player.x, player.y - 100, 'OOPS!', palette.heart);
+      audio.fall();
+      if (game.lives <= 0) {
+        game.gameOverReason = 'lives';
+        setGameScreen(GAME_SCREENS.GAMEOVER);
+        return true;
+      }
+      return true;
+    };
+
+    if (enemy.attackTimer > 0) {
+      enemy.attackTimer = Math.max(0, enemy.attackTimer - dt);
+      enemy.vx = 0;
+      enemy.action = 'attack';
+      enemy.facing = desiredDir;
+
+      if (!enemy.damageDealt && enemy.attackTimer <= enemy.attackImpactAt) {
+        if (tryStompOrDamage()) {
+          if (enemy.defeated) {
+            continue;
+          }
+          if (game.screen !== GAME_SCREENS.PLAYING) {
+            return;
+          }
+        }
+      }
+
+      if (enemy.attackTimer <= 0) {
+        enemy.attackCooldown = enemy.attackCooldownMax;
+        enemy.damageDealt = false;
+        enemy.action = 'idle';
+      }
+      continue;
+    }
+
+    if (enemy.attackCooldown > 0) {
+      enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
+      enemy.vx = 0;
+      enemy.action = 'idle';
+      enemy.facing = desiredDir;
+      if (surfaceY !== null) {
+        enemy.y = surfaceY;
+        enemy.grounded = true;
+      }
+      continue;
+    }
+
+    const lookAheadX = enemy.x + enemy.dir * 70;
+    const hasGroundAhead = getTerrainSurfaceAt(lookAheadX, enemy.section) !== null;
+
+    if (!hasGroundAhead) {
+      enemy.dir *= -1;
+    } else if (playerClose) {
+      enemy.dir = desiredDir;
+    } else if (enemy.x <= enemy.patrolMin) {
+      enemy.dir = 1;
+    } else if (enemy.x >= enemy.patrolMax) {
+      enemy.dir = -1;
+    }
+    enemy.facing = enemy.dir;
+
+    const targetSpeed = enemy.dir * enemy.speed * (playerClose ? 1.18 : 0.72);
+    enemy.vx += (targetSpeed - enemy.vx) * Math.min(1, dt * 6);
+    enemy.x = clamp(enemy.x + enemy.vx * dt, 140, game.worldWidth - 140);
+
+    const nextSurfaceY = getTerrainSurfaceAt(enemy.x, enemy.section);
+    if (nextSurfaceY !== null) {
+      enemy.y = nextSurfaceY;
+      enemy.grounded = true;
+    } else {
+      enemy.x -= enemy.vx * dt;
+      enemy.vx = 0;
+      enemy.dir *= -1;
+      enemy.facing = enemy.dir;
+      enemy.grounded = false;
+    }
+
+    if (playerClose && dist2(enemy, player) < (enemy.attackRange || enemy.hitRadius) ** 2) {
+      enemy.attackTimer = enemy.attackDuration;
+      enemy.damageDealt = false;
+      enemy.vx = 0;
+      enemy.action = 'attack';
+      enemy.facing = desiredDir;
+      player.vx *= 0.35;
+    }
   }
 }
 
 function drawWorld(cameraX, t) {
-  if (levelReady && levelImage.naturalWidth) {
+  const level = getCurrentLevelDefinition();
+  const levelAsset = level ? levelBackgrounds.get(level.id) : null;
+  if (levelAsset?.ready) {
     const section = LEVEL_SEGMENTS[game.currentSection];
     const levelBottom = LEVEL_BAND_Y + Math.round(section.sh * LEVEL_SCALE);
-    ctx.drawImage(
-      levelImage,
-      0,
-      section.sy,
-      LEVEL_SOURCE_SECTION_WIDTH,
-      section.sh,
-      -cameraX,
-      LEVEL_BAND_Y,
-      LEVEL_SECTION_WIDTH,
-      Math.round(section.sh * LEVEL_SCALE)
-    );
+    const stripImage = levelAsset.stripImages?.[game.currentSection];
+    if (stripImage?.naturalWidth) {
+      ctx.drawImage(
+        stripImage,
+        -cameraX,
+        LEVEL_BAND_Y,
+        LEVEL_SECTION_WIDTH,
+        Math.round(section.sh * LEVEL_SCALE)
+      );
+    }
     pixelRect(0, levelBottom, WIDTH, Math.max(0, 1312 - levelBottom), '#181b24');
   } else {
     drawSkyParallax(cameraX);
@@ -1294,7 +1947,8 @@ function drawWorld(cameraX, t) {
 
   drawCollectibleLayer(t, cameraX);
   drawParty(t, cameraX);
-  drawFloatingTexts(cameraX);
+  drawEnemies(cameraX);
+  drawParticles(cameraX);
 }
 
 function updateGame(dt) {
@@ -1319,7 +1973,7 @@ function updateGame(dt) {
     game.combo = 0;
   }
   game.comboPulse = Math.max(0, game.comboPulse - dt);
-  updateFloatingTexts(dt);
+  updateParticles(dt);
 
   if (game.timer <= 0 && !game.completed) {
     game.gameOverReason = 'timer';
@@ -1328,6 +1982,7 @@ function updateGame(dt) {
   }
 
   const player = game.family[0];
+  player.prevY = player.y;
   const inputX = (controls.right ? 1 : 0) - (controls.left ? 1 : 0);
   const jumpRequested = controls.jump || controls.up;
   const groundedBeforeMove = player.grounded;
@@ -1343,10 +1998,13 @@ function updateGame(dt) {
   game.jumpBuffer = Math.max(0, game.jumpBuffer - dt);
   player.coyoteTimer = Math.max(0, (player.coyoteTimer || 0) - dt);
 
-  player.vx += inputX * accel * dt;
+  const targetSpeed = inputX * maxSpeed;
+  if (inputX !== 0) {
+    player.vx = approach(player.vx, targetSpeed, accel * dt);
+  } else {
+    player.vx *= drag;
+  }
   player.vx = clamp(player.vx, -maxSpeed, maxSpeed);
-
-  player.vx *= drag;
 
   player.x += player.vx * dt;
   player.x = clamp(player.x, 140, game.worldWidth - 140);
@@ -1393,11 +2051,15 @@ function updateGame(dt) {
     member.facing = leader.facing;
   }
 
-  if (player.grounded && player.x >= SECTION_END_X) {
+  if (player.grounded && player.x >= SECTION_END_VISUAL_X) {
     if (game.currentSection < LEVEL_SEGMENTS.length - 1) {
       placeFamilyAtSectionStart(game.currentSection + 1);
       game.message = `Schermata ${game.currentSection + 1} di ${LEVEL_SEGMENTS.length}`;
       game.showCenterMessage = true;
+      spawnText(game.cameraX + WIDTH / 2, HEIGHT / 2, 'AVANTI!', palette.energy, 1.2);
+      return;
+    }
+    if (advanceToNextLevel()) {
       return;
     }
     game.completed = true;
@@ -1437,8 +2099,14 @@ function updateGame(dt) {
     }
   }
 
+  updateEnemies(dt, player);
+  if (game.screen !== GAME_SCREENS.PLAYING) {
+    return;
+  }
+
   if (needsRespawn) {
     game.lives -= 1;
+    spawnText(player.x, player.y - 100, 'OOPS!', palette.heart);
     audio.fall();
     if (game.lives <= 0) {
       game.gameOverReason = 'lives';
@@ -1464,7 +2132,10 @@ function updateGame(dt) {
       game.comboPulse = 0.22;
       const multiplier = Math.min(game.combo, 5);
       game.score += multiplier;         // ← punteggio con bonus combo
-      addFloatingText(`+1 x${multiplier}`, player.x, player.y - player.scale * game.floatingTextOffsetMultiplier, palette.gold1);
+      spawnText(player.x, player.y - 120, `+${multiplier}`, palette.gold1);
+      if (game.combo >= 2) {
+        spawnText(player.x, player.y - 200, `×${game.combo} COMBO!`, palette.gold2);
+      }
       game.energy = Math.min(10, game.energy + game.energyRecoveryPerGem); // Legacy, no longer used
       audio.collectStar();
       if (game.gemsCollected >= game.totalGems) {   // ← condizione su stelle fisiche
@@ -1762,8 +2433,9 @@ canvas.addEventListener('pointerdown', (event) => {
   }
 });
 
-Promise.all([loadConfig(), loadSprites(), loadLevelBackground(), loadTerrainData()]).then(([loadedConfig]) => {
+Promise.all([loadConfig(), loadSprites(), loadEnemySprites(), loadTerrainData()]).then(async ([loadedConfig]) => {
   applyConfig(loadedConfig);
+  await loadLevelBackgrounds();
   bindTouchControls();
   bindPauseButton();
   bindRestartButton();

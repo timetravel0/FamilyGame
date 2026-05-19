@@ -18,10 +18,10 @@
   },
   "physics": {
     "player": {
-      "walkAccel": 1200,
-      "runAccel": 1900,
-      "walkMaxSpeed": 880,
-      "runMaxSpeed": 1480,
+      "walkAccel": 600,
+      "runAccel": 1200,
+      "walkMaxSpeed": 1580,
+      "runMaxSpeed": 2080,
       "drag": 0.86,
       "airAccel": 1500,
       "airMaxSpeed": 2000,
@@ -100,6 +100,50 @@
     { "dx": 156, "dy": 4 },
     { "dx": 128, "dy": 22 },
     { "dx": 172, "dy": 6 }
+  ],
+  "enemies": {
+    "perSection": [1, 1, 1]
+  },
+  "levels": [
+    {
+      "id": "level-1",
+      "title": "Livello 1",
+      "subtitle": "Prima serie di schermate",
+      "backgroundPath": "./level.png",
+      "stripPaths": [
+        "./level_strip_0.png",
+        "./level_strip_1.png",
+        "./level_strip_2.png"
+      ],
+      "bandHeight": 1050,
+      "segments": [
+        { "sy": 0, "sh": 341 },
+        { "sy": 341, "sh": 341 },
+        { "sy": 682, "sh": 342 }
+      ],
+      "startMessage": "Corri verso destra e raccogli le stelle"
+    },
+    {
+      "id": "level-2",
+      "title": "Livello 2",
+      "subtitle": "Seconda serie di schermate",
+      "backgroundPath": "./level2_strip_0.png",
+      "stripPaths": [
+        "./level2_strip_0.png",
+        "./level2_strip_1.png",
+        "./level2_strip_2.png",
+        "./level2_strip_3.png"
+      ],
+      "bandHeight": 1050,
+      "segments": [
+        { "sy": 0, "sh": 256 },
+        { "sy": 256, "sh": 256 },
+        { "sy": 512, "sh": 256 },
+        { "sy": 768, "sh": 256 }
+      ],
+      "mirrorCollectibles": true,
+      "startMessage": "Secondo livello: continua verso destra"
+    }
   ],
   "collectibles": [
     { "section": 0, "x": 220, "y": 954 },

@@ -8,11 +8,12 @@ from PIL import Image, ImageOps
 
 
 CHARACTER_ROWS = ("dad", "mom", "kid", "teen")
+ENEMY_ROWS = ("banditi", "uomini_in_giacca", "ragazzini_bulli")
 
 # Column indexes are the detected sprite order inside each row of sprite_v2.png.
 # The sheet contains right-facing base frames; left-facing variants are mirrored
 # where the row does not provide a complete left-facing sequence.
-FRAME_MAP = {
+FAMILY_FRAME_MAP = {
     "idle_right.png": (0, False),
     "idle.png": (0, False),
     "idle_left.png": (0, True),
@@ -24,12 +25,32 @@ FRAME_MAP = {
     "walk_left_1.png": (1, True),
     "walk_left_2.png": (2, True),
     "walk_left_3.png": (3, True),
+    "walk_left_4.png": (4, True),
+    "walk_left_5.png": (5, True),
     "jump_right_1.png": (10, False),
     "jump_right_2.png": (11, False),
     "jump_right_3.png": (12, False),
     "jump_left_1.png": (10, True),
     "jump_left_2.png": (11, True),
     "jump_left_3.png": (12, True),
+}
+
+ENEMY_FRAME_MAP = {
+    "idle_right.png": (0, False),
+    "idle.png": (0, False),
+    "idle_left.png": (0, True),
+    "walk_right_1.png": (1, False),
+    "walk_right_2.png": (2, False),
+    "walk_right_3.png": (3, False),
+    "walk_left_1.png": (1, True),
+    "walk_left_2.png": (2, True),
+    "walk_left_3.png": (3, True),
+    "jump_right_1.png": (4, False),
+    "jump_right_2.png": (5, False),
+    "jump_right_3.png": (6, False),
+    "jump_left_1.png": (4, True),
+    "jump_left_2.png": (5, True),
+    "jump_left_3.png": (6, True),
 }
 
 
@@ -152,21 +173,25 @@ def trim_to_foreground(image: Image.Image, threshold: int, padding: int) -> Imag
     return rgba.crop((left, top, right + 1, bottom + 1))
 
 
-def detect_sprite_boxes(sheet: Image.Image, threshold: int) -> dict[str, list[SpriteBox]]:
+def detect_sprite_boxes(
+    sheet: Image.Image,
+    threshold: int,
+    row_names: tuple[str, ...],
+) -> dict[str, list[SpriteBox]]:
     mask = foreground_mask(sheet, threshold)
     rows = detect_rows(mask)
 
-    if len(rows) != len(CHARACTER_ROWS):
+    if len(rows) != len(row_names):
         raise RuntimeError(
-            f"Expected {len(CHARACTER_ROWS)} character rows, detected {len(rows)}: {rows}"
+            f"Expected {len(row_names)} rows, detected {len(rows)}: {rows}"
         )
 
     boxes: dict[str, list[SpriteBox]] = {}
-    for character, row in zip(CHARACTER_ROWS, rows):
+    for character, row in zip(row_names, rows):
         columns = detect_columns(mask, row, row[1] - row[0] + 1)
-        if len(columns) < 13:
+        if len(columns) < 7:
             raise RuntimeError(
-                f"Expected at least 13 sprites for {character}, detected {len(columns)}"
+                f"Expected at least 7 sprites for {character}, detected {len(columns)}"
             )
         boxes[character] = [
             SpriteBox(left, row[0], right + 1, row[1] + 1)
@@ -182,17 +207,19 @@ def extract_sprites(
     threshold: int,
     padding: int,
     write: bool,
+    row_names: tuple[str, ...],
+    frame_map: dict[str, tuple[int, bool]],
 ) -> None:
     sheet = Image.open(source).convert("RGBA")
-    boxes_by_character = detect_sprite_boxes(sheet, threshold)
+    boxes_by_character = detect_sprite_boxes(sheet, threshold, row_names)
 
-    for character in CHARACTER_ROWS:
+    for character in row_names:
         character_dir = output_dir / character
         if write:
             character_dir.mkdir(parents=True, exist_ok=True)
 
         boxes = boxes_by_character[character]
-        for filename, (column_index, flip) in FRAME_MAP.items():
+        for filename, (column_index, flip) in frame_map.items():
             if column_index >= len(boxes):
                 raise RuntimeError(
                     f"{character}: frame {filename} needs column {column_index}, "
@@ -215,7 +242,13 @@ def extract_sprites(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract dad/kid/mom/teen sprites from sprite_v2.png."
+        description="Extract character or enemy sprites from a sprite sheet."
+    )
+    parser.add_argument(
+        "--kind",
+        choices=("family", "enemies"),
+        default="family",
+        help="Sheet layout to extract. Defaults to family.",
     )
     parser.add_argument(
         "source",
@@ -252,12 +285,20 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.kind == "enemies":
+        row_names = ENEMY_ROWS
+        frame_map = ENEMY_FRAME_MAP
+    else:
+        row_names = CHARACTER_ROWS
+        frame_map = FAMILY_FRAME_MAP
     extract_sprites(
         source=args.source,
         output_dir=args.output_dir,
         threshold=args.threshold,
         padding=args.padding,
         write=args.write,
+        row_names=row_names,
+        frame_map=frame_map,
     )
 
 
