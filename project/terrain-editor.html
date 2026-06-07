@@ -4,56 +4,76 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Terrain Editor - Famiglia in Avventura</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Press+Start+2P&display=swap" rel="stylesheet" />
     <style>
       :root {
         color-scheme: dark;
-        --bg: #07111f;
-        --panel: rgba(4, 21, 40, 0.92);
-        --line: #8da5be;
-        --accent: #ffb528;
-        --good: #44d36a;
-        --bad: #ff5d73;
-        --text: #f4f6ff;
+        --bg: #0e0a1f;
+        --panel: rgba(36, 26, 58, 0.92);
+        --line: #4a3a78;
+        --accent: #ffd23f;
+        --good: #67d96b;
+        --bad: #ff5b78;
+        --text: #fff4d6;
       }
-      html,
-      body {
+      * { box-sizing: border-box; }
+      html, body {
         margin: 0;
         min-height: 100%;
         background:
-          radial-gradient(circle at top, rgba(255, 181, 40, 0.16), transparent 24%),
-          linear-gradient(180deg, #0c1326, var(--bg) 34%, #02060d 100%);
+          radial-gradient(1200px 600px at 50% -10%, #2a2150 0%, #160f2c 55%, #0e0a1f 100%);
         color: var(--text);
-        font-family: monospace;
+        font-family: "Baloo 2", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: .05;
+        z-index: 0;
+        background-image: radial-gradient(circle, #fff 1px, transparent 1.4px);
+        background-size: 26px 26px;
       }
       body {
         padding: 20px;
-        box-sizing: border-box;
+        position: relative;
+        z-index: 1;
       }
       .shell {
         max-width: 1560px;
         margin: 0 auto;
         display: grid;
         gap: 16px;
+        position: relative;
+        z-index: 1;
       }
       .topbar {
         display: grid;
         gap: 12px;
-        padding: 16px;
-        border: 1px solid rgba(141, 165, 190, 0.3);
+        padding: 18px 20px;
+        border: 2px solid var(--line);
         border-radius: 18px;
         background: var(--panel);
+        box-shadow: 0 0 0 4px #1a1030, 0 12px 30px rgba(0,0,0,.45);
       }
       .topbar h1 {
         margin: 0;
-        font-size: 24px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+        font-family: "Press Start 2P", monospace;
+        font-size: 18px;
+        letter-spacing: 0.06em;
         color: var(--accent);
+        text-shadow: 0 3px 0 #b97600, 0 4px 0 rgba(0,0,0,.4);
       }
       .topbar p {
         margin: 0;
-        color: #c8d7ea;
+        color: #c9bff0;
         line-height: 1.5;
+        font-size: 14px;
+        font-weight: 600;
       }
       .controls {
         display: flex;
@@ -61,29 +81,45 @@
         gap: 10px;
         align-items: center;
       }
-      button,
-      .file {
-        border: 1px solid rgba(141, 165, 190, 0.8);
+      button, .file {
+        border: 2px solid #51407f;
         border-radius: 12px;
-        background: linear-gradient(180deg, #16365e, #0c2440);
+        background: linear-gradient(#3a2c63, #271c45);
         color: var(--text);
-        font: 700 14px/1 monospace;
-        padding: 10px 14px;
+        font: 700 13px/1 "Press Start 2P", monospace;
+        padding: 11px 16px;
         cursor: pointer;
+        box-shadow: 0 4px 0 #181030;
+        transition: transform .06s, box-shadow .06s;
+        letter-spacing: .5px;
+      }
+      button:active, .file:active {
+        transform: translateY(4px);
+        box-shadow: 0 0 0 #181030;
       }
       button.active {
         border-color: var(--accent);
-        box-shadow: inset 0 0 0 1px rgba(255, 181, 40, 0.45);
+        background: linear-gradient(#4a3a78, #352a5c);
+        box-shadow: 0 4px 0 #181030, inset 0 0 0 1px rgba(255,210,63,.35);
       }
       button.primary {
-        background: linear-gradient(180deg, #ef9f21, #b96c05);
-        color: #1b1203;
+        background: linear-gradient(#ffd54a, #ffb028);
+        color: #3a2300;
+        border: none;
+        box-shadow: 0 5px 0 #b56b00;
       }
+      button.primary:active { box-shadow: 0 1px 0 #b56b00; }
       button.danger {
-        background: linear-gradient(180deg, #8f3141, #521522);
+        background: linear-gradient(#ff5b78, #c0274a);
+        color: #fff4d6;
+        border-color: #ff5b78;
+        box-shadow: 0 4px 0 #7a0f2a;
       }
+      button.danger:active { box-shadow: 0 0 0 #7a0f2a; }
       .status {
-        color: #9dd3ff;
+        color: #8fd0ff;
+        font-weight: 700;
+        font-size: 13px;
       }
       .sections {
         display: grid;
@@ -92,8 +128,9 @@
       .section {
         padding: 14px;
         border-radius: 18px;
-        border: 1px solid rgba(141, 165, 190, 0.28);
-        background: rgba(0, 15, 29, 0.8);
+        border: 2px solid var(--line);
+        background: rgba(20, 12, 42, 0.8);
+        box-shadow: 0 0 0 3px #110928;
       }
       .section-head {
         display: flex;
@@ -104,28 +141,33 @@
       }
       .section-head h2 {
         margin: 0;
-        font-size: 18px;
-        color: #ffd36a;
+        font-family: "Press Start 2P", monospace;
+        font-size: 14px;
+        color: var(--accent);
+        text-shadow: 0 2px 0 #b97600;
+        letter-spacing: .5px;
       }
       .section-head small {
-        color: #9fb6cf;
+        color: #9b8fcc;
       }
       canvas {
         display: block;
         width: 100%;
         height: auto;
         border-radius: 12px;
-        border: 1px solid rgba(141, 165, 190, 0.25);
-        background: #14263d;
+        border: 2px solid var(--line);
+        background: #0b0818;
         touch-action: none;
         image-rendering: pixelated;
+        box-shadow: inset 0 0 20px rgba(0,0,0,.4);
       }
       .legend {
         display: grid;
         gap: 8px;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        color: #c8d7ea;
+        color: #c9bff0;
         font-size: 13px;
+        font-weight: 600;
       }
       .level-tabs {
         display: flex;
@@ -136,9 +178,12 @@
         min-width: 120px;
       }
       .level-tabs button.active {
-        background: linear-gradient(180deg, #ef9f21, #b96c05);
-        color: #1b1203;
+        background: linear-gradient(#ffd54a, #ffb028);
+        color: #3a2300;
+        border: none;
+        box-shadow: 0 4px 0 #b56b00;
       }
+      .level-tabs button.active:active { box-shadow: 0 0 0 #b56b00; }
       .legend span {
         display: inline-flex;
         align-items: center;
@@ -178,9 +223,9 @@
       </div>
 
       <div class="legend">
-        <span><i class="swatch" style="background:#44d36a"></i>linea terreno</span>
-        <span><i class="swatch" style="background:#ff5d73"></i>vuoto / buco</span>
-        <span><i class="swatch" style="background:#ffb528"></i>punti attivi</span>
+        <span><i class="swatch" style="background:#67d96b"></i>linea terreno</span>
+        <span><i class="swatch" style="background:#ff5b78"></i>vuoto / buco</span>
+        <span><i class="swatch" style="background:#ffd23f"></i>punti attivi</span>
       </div>
 
       <div class="sections" id="sections"></div>
