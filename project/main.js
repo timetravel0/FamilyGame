@@ -796,12 +796,22 @@ function updateRestartButtonVisibility() {
   }
 }
 
+const SPRITE_OVERRIDES_KEY = 'familygame-sprites';
+
+function getSpriteOverride(path) {
+  try {
+    const raw = window.localStorage.getItem(SPRITE_OVERRIDES_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw)[path] ?? null;
+  } catch { return null; }
+}
+
 function loadImage(path) {
   return new Promise((resolve) => {
     const image = new Image();
     image.onload = () => resolve(image);
     image.onerror = () => resolve(null);
-    image.src = path;
+    image.src = getSpriteOverride(path) || path;
   });
 }
 

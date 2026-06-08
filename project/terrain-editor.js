@@ -910,6 +910,603 @@ elements.levelButtons.forEach((button, index) => {
   button.addEventListener('click', () => setActiveLevel(index));
 });
 
+// ═══════════════════════════════════════════════════════
+//  SPRITE & BACKGROUNDS EDITOR
+// ═══════════════════════════════════════════════════════
+
+const SPRITE_OVERRIDES_KEY = 'familygame-sprites';
+const SPRITES_API_PATH = '/api/sprites';
+
+const GAME_PALETTE = [
+  '#03192f','#f39b19','#00233d','#954a8f','#f2b35f','#d86d71','#2b3d19','#49622f',
+  '#7f9737','#ffec56','#ff8e00','#f4f6ff','#1f8ce0','#0c4e91','#001e3a','#8da5be',
+  '#ef4874','#56de61','#9f8462','#7c4d2a','#6a4f65','#af7558','#3f2942','#6e4528',
+  '#8f5f34','#d98b59','#e6ab86','#1f4f98','#e8e7e1','#ffd888','#1f6eb8','#eef7ff',
+  '#000000','#ffffff','#ff0000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff'
+];
+
+function buildCharPaths(name, walkCount = 5) {
+  const dirs = ['right', 'left'];
+  const result = {};
+  for (const d of dirs) {
+    result[d] = {
+      idle: `./assets/character-sprites/${name}/idle_${d}.png`,
+      walk: Array.from({ length: walkCount }, (_, i) => `./assets/character-sprites/${name}/walk_${d}_${i + 1}.png`),
+      jump: Array.from({ length: 3 }, (_, i) => `./assets/character-sprites/${name}/jump_${d}_${i + 1}.png`)
+    };
+  }
+  return result;
+}
+
+function flattenPaths(entityId, paths) {
+  const frames = [];
+  for (const dir of ['right', 'left']) {
+    const dp = paths[dir];
+    frames.push({ key: `${entityId}/${dir}/idle`, label: `${dir} idle`, path: dp.idle });
+    dp.walk.forEach((p, i) => frames.push({ key: `${entityId}/${dir}/walk${i+1}`, label: `${dir} w${i+1}`, path: p }));
+    dp.jump.forEach((p, i) => frames.push({ key: `${entityId}/${dir}/jump${i+1}`, label: `${dir} j${i+1}`, path: p }));
+  }
+  return frames;
+}
+
+const SPRITE_CATALOG = {
+  characters: [
+    { id: 'dad',  label: 'Papà',   color: '#32b4ea', frames: flattenPaths('dad',  buildCharPaths('dad',  5)) },
+    { id: 'mom',  label: 'Mamma',  color: '#ff6f91', frames: flattenPaths('mom',  buildCharPaths('mom',  5)) },
+    { id: 'kid',  label: 'Bimbo',  color: '#56de61', frames: flattenPaths('kid',  buildCharPaths('kid',  3)) },
+    { id: 'teen', label: 'Teen',   color: '#ffbf38', frames: flattenPaths('teen', buildCharPaths('teen', 5)) }
+  ],
+  enemies: [
+    { id: 'banditi',          label: 'Banditi',        color: '#ff5b78', frames: flattenPaths('banditi',          buildCharPaths('banditi',          3)) },
+    { id: 'uomini_in_giacca', label: 'In Giacca',      color: '#8fd0ff', frames: flattenPaths('uomini_in_giacca', buildCharPaths('uomini_in_giacca', 3)) },
+    { id: 'ragazzini_bulli',  label: 'Ragazzini',      color: '#ffd23f', frames: flattenPaths('ragazzini_bulli',  buildCharPaths('ragazzini_bulli',  3)) }
+  ],
+  backgrounds: [
+    { id: 'level_strip_0',  label: 'L1 Strip 1', path: './level_strip_0.png'  },
+    { id: 'level_strip_1',  label: 'L1 Strip 2', path: './level_strip_1.png'  },
+    { id: 'level_strip_2',  label: 'L1 Strip 3', path: './level_strip_2.png'  },
+    { id: 'level2_strip_0', label: 'L2 Strip 1', path: './level2_strip_0.png' },
+    { id: 'level2_strip_1', label: 'L2 Strip 2', path: './level2_strip_1.png' },
+    { id: 'level2_strip_2', label: 'L2 Strip 3', path: './level2_strip_2.png' },
+    { id: 'level2_strip_3', label: 'L2 Strip 4', path: './level2_strip_3.png' }
+  ]
+};
+
+const spriteState = {
+  overrides: {},          // { path: 'data:image/png;base64,...' }
+  activeCategory: 'characters',
+  activeEntityId: 'dad',
+  editingPath: null,
+  editingKey: null,
+  editingLabel: null,
+  originalSrc: null       // original path (not override) for reset
+};
+
+// ── Override persistence ──────────────────────────────
+
+function loadOverridesFromStorage() {
+  try {
+    const raw = window.localStorage.getItem(SPRITE_OVERRIDES_KEY);
+    spriteState.overrides = raw ? JSON.parse(raw) : {};
+  } catch { spriteState.overrides = {}; }
+}
+
+async function loadOverridesFromServer() {
+  try {
+    const r = await fetch(SPRITES_API_PATH, { cache: 'no-store' });
+    if (r.ok) {
+      const data = await r.json();
+      if (data && typeof data === 'object') {
+        spriteState.overrides = data;
+        window.localStorage.setItem(SPRITE_OVERRIDES_KEY, JSON.stringify(data));
+        return;
+      }
+    }
+  } catch { /* fall through */ }
+  loadOverridesFromStorage();
+}
+
+async function saveOverrides() {
+  window.localStorage.setItem(SPRITE_OVERRIDES_KEY, JSON.stringify(spriteState.overrides));
+  try {
+    await fetch(SPRITES_API_PATH, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(spriteState.overrides)
+    });
+  } catch { /* server unavailable, localStorage is enough */ }
+}
+
+// ── PixelEditor class ─────────────────────────────────
+
+class PixelEditor {
+  constructor(displayCanvas) {
+    this.display = displayCanvas;
+    this.source = null;   // canvas holding actual pixel data
+    this.zoom = 8;
+    this.tool = 'pencil';
+    this.color = '#ffffff';
+    this.gridOn = true;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.drawing = false;
+    this.lastPx = null;
+    this.lastPy = null;
+
+    this.display.addEventListener('pointerdown', this._onDown.bind(this));
+    this.display.addEventListener('pointermove', this._onMove.bind(this));
+    this.display.addEventListener('pointerup',   this._onUp.bind(this));
+    this.display.addEventListener('pointercancel', this._onUp.bind(this));
+  }
+
+  async loadFromURL(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        this.source = document.createElement('canvas');
+        this.source.width  = img.naturalWidth  || img.width;
+        this.source.height = img.naturalHeight || img.height;
+        const ctx = this.source.getContext('2d');
+        ctx.clearRect(0, 0, this.source.width, this.source.height);
+        ctx.drawImage(img, 0, 0);
+        this._recalcZoom();
+        this.render();
+        resolve();
+      };
+      img.onerror = () => resolve();
+      img.src = src;
+    });
+  }
+
+  _recalcZoom() {
+    const wrap = this.display.parentElement;
+    const maxW = (wrap ? wrap.clientWidth  : 600) - 4;
+    const maxH = 520;
+    const z = Math.min(
+      Math.floor(maxW / this.source.width),
+      Math.floor(maxH / this.source.height),
+      16
+    );
+    this.zoom = Math.max(1, z);
+    this.display.width  = this.source.width  * this.zoom;
+    this.display.height = this.source.height * this.zoom;
+  }
+
+  render() {
+    if (!this.source) return;
+    const ctx = this.display.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    // Transparent checkerboard
+    const cz = Math.max(1, Math.round(this.zoom / 2));
+    for (let y = 0; y < this.source.height; y++) {
+      for (let x = 0; x < this.source.width; x++) {
+        ctx.fillStyle = ((x + y) % 2 === 0) ? '#2a2040' : '#1a1430';
+        ctx.fillRect(x * this.zoom, y * this.zoom, this.zoom, this.zoom);
+      }
+    }
+
+    ctx.drawImage(this.source, 0, 0, this.display.width, this.display.height);
+
+    if (this.gridOn && this.zoom >= 4) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x <= this.source.width; x++) {
+        ctx.beginPath(); ctx.moveTo(x*this.zoom, 0); ctx.lineTo(x*this.zoom, this.display.height); ctx.stroke();
+      }
+      for (let y = 0; y <= this.source.height; y++) {
+        ctx.beginPath(); ctx.moveTo(0, y*this.zoom); ctx.lineTo(this.display.width, y*this.zoom); ctx.stroke();
+      }
+    }
+  }
+
+  _pixelAt(e) {
+    const rect = this.display.getBoundingClientRect();
+    const cx = (e.clientX - rect.left) * (this.display.width  / rect.width);
+    const cy = (e.clientY - rect.top)  * (this.display.height / rect.height);
+    return {
+      x: Math.floor(cx / this.zoom),
+      y: Math.floor(cy / this.zoom)
+    };
+  }
+
+  _pushUndo() {
+    const ctx = this.source.getContext('2d');
+    this.undoStack.push(ctx.getImageData(0, 0, this.source.width, this.source.height));
+    if (this.undoStack.length > 50) this.undoStack.shift();
+    this.redoStack = [];
+  }
+
+  undo() {
+    if (!this.undoStack.length) return;
+    const ctx = this.source.getContext('2d');
+    this.redoStack.push(ctx.getImageData(0, 0, this.source.width, this.source.height));
+    ctx.putImageData(this.undoStack.pop(), 0, 0);
+    this.render();
+  }
+
+  redo() {
+    if (!this.redoStack.length) return;
+    const ctx = this.source.getContext('2d');
+    this.undoStack.push(ctx.getImageData(0, 0, this.source.width, this.source.height));
+    ctx.putImageData(this.redoStack.pop(), 0, 0);
+    this.render();
+  }
+
+  _setPixel(x, y) {
+    const w = this.source.width, h = this.source.height;
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const ctx = this.source.getContext('2d');
+    if (this.tool === 'eraser') {
+      ctx.clearRect(x, y, 1, 1);
+    } else {
+      ctx.fillStyle = this.color;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+
+  _drawLine(x0, y0, x1, y1) {
+    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    for (let i = 0; i < 2000; i++) {
+      this._setPixel(x0, y0);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x0 += sx; }
+      if (e2 <  dx) { err += dx; y0 += sy; }
+    }
+  }
+
+  _floodFill(sx, sy) {
+    const w = this.source.width, h = this.source.height;
+    const ctx = this.source.getContext('2d');
+    const data = ctx.getImageData(0, 0, w, h);
+    const px = data.data;
+    const ti = (sx + sy * w) * 4;
+    const [tr, tg, tb, ta] = [px[ti], px[ti+1], px[ti+2], px[ti+3]];
+
+    const tmp = document.createElement('canvas');
+    tmp.width = tmp.height = 1;
+    const tc = tmp.getContext('2d');
+    tc.fillStyle = this.color;
+    tc.fillRect(0, 0, 1, 1);
+    const fd = tc.getImageData(0, 0, 1, 1).data;
+    const [fr, fg, fb, fa] = [fd[0], fd[1], fd[2], fd[3]];
+
+    if (tr===fr && tg===fg && tb===fb && ta===fa) return;
+
+    const queue = [sx + sy * w];
+    const visited = new Uint8Array(w * h);
+    while (queue.length) {
+      const pos = queue.pop();
+      if (visited[pos]) continue;
+      const xi = pos % w, yi = Math.floor(pos / w);
+      const i = pos * 4;
+      if (px[i]!==tr || px[i+1]!==tg || px[i+2]!==tb || px[i+3]!==ta) continue;
+      visited[pos] = 1;
+      px[i]=fr; px[i+1]=fg; px[i+2]=fb; px[i+3]=fa;
+      if (xi > 0)   queue.push(pos - 1);
+      if (xi < w-1) queue.push(pos + 1);
+      if (yi > 0)   queue.push(pos - w);
+      if (yi < h-1) queue.push(pos + w);
+    }
+    ctx.putImageData(data, 0, 0);
+  }
+
+  _eyedrop(x, y) {
+    const ctx = this.source.getContext('2d');
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    if (d[3] === 0) return;
+    const hex = '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+    this.setColor(hex);
+  }
+
+  setColor(hex) {
+    this.color = hex;
+    document.querySelectorAll('.pe-swatch').forEach(s => s.classList.toggle('selected', s.dataset.color === hex));
+    const ci = document.getElementById('pe-color-input');
+    const cc = document.getElementById('pe-cur-color');
+    if (ci) ci.value = hex;
+    if (cc) cc.style.background = hex;
+  }
+
+  setTool(t) {
+    this.tool = t;
+    document.querySelectorAll('.pe-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  }
+
+  _onDown(e) {
+    e.preventDefault();
+    this.display.setPointerCapture(e.pointerId);
+    if (!this.source) return;
+    const { x, y } = this._pixelAt(e);
+    if (this.tool === 'eyedropper') { this._eyedrop(x, y); return; }
+    if (this.tool === 'fill') { this._pushUndo(); this._floodFill(x, y); this.render(); return; }
+    this._pushUndo();
+    this.drawing = true;
+    this.lastPx = x; this.lastPy = y;
+    this._setPixel(x, y);
+    this.render();
+  }
+
+  _onMove(e) {
+    if (!this.drawing) return;
+    const { x, y } = this._pixelAt(e);
+    if (x === this.lastPx && y === this.lastPy) return;
+    this._drawLine(this.lastPx, this.lastPy, x, y);
+    this.lastPx = x; this.lastPy = y;
+    this.render();
+  }
+
+  _onUp() {
+    this.drawing = false;
+    this.lastPx = this.lastPy = null;
+  }
+
+  toDataURL() {
+    return this.source ? this.source.toDataURL('image/png') : null;
+  }
+
+  get imageSize() {
+    return this.source ? `${this.source.width}×${this.source.height} px` : '';
+  }
+}
+
+// ── Gallery rendering ─────────────────────────────────
+
+let pixelEditor = null;
+
+function getCurrentFrames() {
+  const cat = spriteState.activeCategory;
+  if (cat === 'backgrounds') return null;
+  const list = SPRITE_CATALOG[cat];
+  return list.find(e => e.id === spriteState.activeEntityId)?.frames ?? null;
+}
+
+function getBackgroundItems() {
+  return SPRITE_CATALOG.backgrounds;
+}
+
+function buildEntityTabs() {
+  const tabs = document.getElementById('sp-entity-tabs');
+  if (!tabs) return;
+  const cat = spriteState.activeCategory;
+  if (cat === 'backgrounds') { tabs.innerHTML = ''; return; }
+  const list = SPRITE_CATALOG[cat];
+  tabs.innerHTML = list.map(e =>
+    `<button class="sp-entity-tab${e.id === spriteState.activeEntityId ? ' active' : ''}" data-entity="${e.id}" style="border-color:${e.id === spriteState.activeEntityId ? 'var(--accent)' : '#51407f'}">${e.label}</button>`
+  ).join('');
+  tabs.querySelectorAll('.sp-entity-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      spriteState.activeEntityId = btn.dataset.entity;
+      buildEntityTabs();
+      buildSpriteGrid();
+    });
+  });
+}
+
+function buildSpriteGrid() {
+  const grid = document.getElementById('sp-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const cat = spriteState.activeCategory;
+  let items;
+  if (cat === 'backgrounds') {
+    items = getBackgroundItems().map(b => ({ key: b.id, label: b.label, path: b.path }));
+  } else {
+    items = getCurrentFrames() || [];
+  }
+
+  for (const item of items) {
+    const card = document.createElement('div');
+    card.className = 'sp-card' +
+      (item.path === spriteState.editingPath ? ' selected' : '') +
+      (spriteState.overrides[item.path] ? ' overridden' : '');
+
+    const img = document.createElement('img');
+    img.className = 'sp-card-img';
+    img.src = spriteState.overrides[item.path] || item.path;
+    img.alt = item.label;
+    img.onerror = () => { img.style.opacity = '0.3'; };
+
+    const lbl = document.createElement('div');
+    lbl.className = 'sp-card-label';
+    lbl.textContent = item.label;
+
+    card.appendChild(img);
+    card.appendChild(lbl);
+    card.addEventListener('click', () => openSpriteEditor(item));
+    grid.appendChild(card);
+  }
+}
+
+function buildPalette() {
+  const pal = document.getElementById('pe-palette');
+  if (!pal) return;
+  pal.innerHTML = GAME_PALETTE.map(c =>
+    `<div class="pe-swatch${c === (pixelEditor?.color || '#ffffff') ? ' selected' : ''}" data-color="${c}" style="background:${c}" title="${c}"></div>`
+  ).join('');
+  pal.querySelectorAll('.pe-swatch').forEach(s => {
+    s.addEventListener('click', () => pixelEditor?.setColor(s.dataset.color));
+  });
+}
+
+async function openSpriteEditor(item) {
+  spriteState.editingPath  = item.path;
+  spriteState.editingKey   = item.key || item.id;
+  spriteState.editingLabel = item.label;
+  spriteState.originalSrc  = item.path;
+
+  // Refresh grid selection
+  document.querySelectorAll('.sp-card').forEach(c => c.classList.remove('selected'));
+  event?.currentTarget?.classList.add('selected');
+  buildSpriteGrid(); // rerender to show selection
+
+  const empty  = document.getElementById('sp-editor-empty');
+  const active = document.getElementById('sp-editor-active');
+  if (empty)  empty.style.display  = 'none';
+  if (active) active.style.display = 'flex';
+
+  const nameEl = document.getElementById('pe-name');
+  if (nameEl) nameEl.textContent = item.label;
+
+  const infoEl = document.getElementById('pe-info');
+
+  const canvas = document.getElementById('pe-canvas');
+  if (!canvas) return;
+  if (!pixelEditor) {
+    pixelEditor = new PixelEditor(canvas);
+    buildPalette();
+  }
+  pixelEditor.undoStack = [];
+  pixelEditor.redoStack = [];
+
+  const src = spriteState.overrides[item.path] || item.path;
+  await pixelEditor.loadFromURL(src);
+
+  if (infoEl) infoEl.textContent = pixelEditor.imageSize;
+}
+
+// ── Sprite save & upload ──────────────────────────────
+
+async function saveSpriteOverride(path, dataURL) {
+  spriteState.overrides[path] = dataURL;
+  await saveOverrides();
+  buildSpriteGrid();
+}
+
+async function removeSpriteOverride(path) {
+  delete spriteState.overrides[path];
+  await saveOverrides();
+  buildSpriteGrid();
+}
+
+// ── Tab switching ─────────────────────────────────────
+
+function switchMainTab(tab) {
+  const panelTerrain  = document.getElementById('panel-terrain');
+  const panelSprites  = document.getElementById('panel-sprites');
+  const terrainCtrl   = document.getElementById('terrain-controls');
+  const topbarDesc    = document.getElementById('topbar-desc');
+  const tabTerrain    = document.getElementById('tab-terrain');
+  const tabSprites    = document.getElementById('tab-sprites');
+
+  if (tab === 'terrain') {
+    panelTerrain?.classList.remove('panel-hidden');
+    panelSprites?.classList.add('panel-hidden');
+    terrainCtrl?.classList.remove('panel-hidden');
+    tabTerrain?.classList.add('active');
+    tabSprites?.classList.remove('active');
+    if (topbarDesc) topbarDesc.textContent = 'Terreno: disegna la linea verde. Buco: trascina per aprire un vuoto. Ripara buco: trascina sopra il vuoto per richiuderlo. Salva in localStorage oppure esporta il JSON che il gioco legge automaticamente.';
+  } else {
+    panelTerrain?.classList.add('panel-hidden');
+    panelSprites?.classList.remove('panel-hidden');
+    terrainCtrl?.classList.add('panel-hidden');
+    tabTerrain?.classList.remove('active');
+    tabSprites?.classList.add('active');
+    if (topbarDesc) topbarDesc.textContent = 'Visualizza, sostituisci e modifica pixel per pixel ogni sprite del gioco. Le modifiche vengono salvate localmente e caricate automaticamente dal gioco.';
+    buildEntityTabs();
+    buildSpriteGrid();
+  }
+}
+
+function initSpriteEditor() {
+  // Category tabs
+  document.querySelectorAll('.sp-cat-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      spriteState.activeCategory = btn.dataset.cat;
+      spriteState.activeEntityId = SPRITE_CATALOG[btn.dataset.cat]?.[0]?.id || '';
+      document.querySelectorAll('.sp-cat-tab').forEach(b => b.classList.toggle('active', b === btn));
+      buildEntityTabs();
+      buildSpriteGrid();
+    });
+  });
+
+  // Main tabs
+  document.getElementById('tab-terrain')?.addEventListener('click', () => switchMainTab('terrain'));
+  document.getElementById('tab-sprites')?.addEventListener('click', () => switchMainTab('sprites'));
+
+  // Pixel editor tools
+  document.querySelectorAll('.pe-tool').forEach(btn => {
+    btn.addEventListener('click', () => pixelEditor?.setTool(btn.dataset.tool));
+  });
+
+  // Color input
+  document.getElementById('pe-color-input')?.addEventListener('input', (e) => {
+    pixelEditor?.setColor(e.target.value);
+    const cc = document.getElementById('pe-cur-color');
+    if (cc) cc.style.background = e.target.value;
+  });
+  document.getElementById('pe-cur-color')?.addEventListener('click', () => {
+    document.getElementById('pe-color-input')?.click();
+  });
+
+  // Undo / redo
+  document.getElementById('pe-undo')?.addEventListener('click', () => pixelEditor?.undo());
+  document.getElementById('pe-redo')?.addEventListener('click', () => pixelEditor?.redo());
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (!document.getElementById('panel-sprites')?.classList.contains('panel-hidden')) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); pixelEditor?.undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); pixelEditor?.redo(); }
+    }
+  });
+
+  // Reset to original
+  document.getElementById('pe-reset')?.addEventListener('click', async () => {
+    if (!spriteState.editingPath) return;
+    if (!confirm('Ripristinare lo sprite originale? Le modifiche salvate verranno cancellate.')) return;
+    await removeSpriteOverride(spriteState.editingPath);
+    await pixelEditor?.loadFromURL(spriteState.originalSrc);
+    const infoEl = document.getElementById('pe-info');
+    if (infoEl) infoEl.textContent = pixelEditor?.imageSize || '';
+  });
+
+  // Save current edit
+  document.getElementById('pe-save')?.addEventListener('click', async () => {
+    if (!pixelEditor || !spriteState.editingPath) return;
+    const dataURL = pixelEditor.toDataURL();
+    if (!dataURL) return;
+    await saveSpriteOverride(spriteState.editingPath, dataURL);
+    setStatus('Sprite salvato');
+  });
+
+  // Upload PNG replacement
+  document.getElementById('pe-upload-input')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataURL = ev.target.result;
+      if (!pixelEditor || !spriteState.editingPath) return;
+      await pixelEditor.loadFromURL(dataURL);
+      const infoEl = document.getElementById('pe-info');
+      if (infoEl) infoEl.textContent = pixelEditor.imageSize;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+
+  // Download current sprite
+  document.getElementById('pe-download')?.addEventListener('click', () => {
+    if (!pixelEditor) return;
+    const dataURL = pixelEditor.toDataURL();
+    if (!dataURL) return;
+    const a = document.createElement('a');
+    a.href = dataURL;
+    a.download = (spriteState.editingLabel || 'sprite').replace(/[^a-z0-9_]/gi, '_') + '.png';
+    a.click();
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+
 async function init() {
   const config = await loadEditorConfig();
   if (config) {
@@ -924,6 +1521,9 @@ async function init() {
   setMode('terrain');
   setActiveLevel(0);
   syncLevelView();
+
+  await loadOverridesFromServer();
+  initSpriteEditor();
 }
 
 init();
