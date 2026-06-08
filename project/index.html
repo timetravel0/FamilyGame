@@ -127,93 +127,129 @@
         transform: translateY(3px);
         box-shadow: 0 0 0 #181030;
       }
-      #touch-controls {
+      /* ── Touch Controls ─────────────────────────────────── */
+      #tc-move, #tc-actions {
         display: none;
         position: fixed;
-        left: 12px;
-        bottom: 12px;
-        grid-template-columns: repeat(3, 64px) 64px 52px 52px 52px;
-        grid-template-rows: 68px;
-        gap: 7px;
-        padding: 10px;
-        border: 2px solid var(--line);
-        border-radius: 16px;
-        background: rgba(36, 26, 58, 0.85);
-        backdrop-filter: blur(6px);
+        bottom: 14px;
+        z-index: 20;
         touch-action: none;
         user-select: none;
-        z-index: 20;
+      }
+      #tc-move { left: 10px; width: 148px; }
+      #tc-actions {
+        right: 10px;
+        width: 156px;
+        flex-direction: column;
+        gap: 7px;
       }
       @media (pointer: coarse) {
-        #touch-controls { display: grid; }
+        #tc-move    { display: block; }
+        #tc-actions { display: flex; }
       }
-      #touch-controls button {
+      /* D-Pad zone */
+      #tc-lr {
+        width: 148px;
+        height: 76px;
+        border-radius: 18px;
+        background: rgba(36, 26, 58, 0.9);
+        border: 2px solid var(--line);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        overflow: hidden;
+        box-shadow: 0 5px 0 #110a22;
+      }
+      .tc-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Press Start 2P", monospace;
+        font-size: 26px;
+        color: var(--cream);
+        opacity: 0.45;
+        transition: opacity .06s, background .06s;
+      }
+      .tc-arrow.active {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.13);
+      }
+      .tc-left-arrow { border-right: 1px solid var(--line); }
+      /* Action buttons */
+      .tc-row { display: flex; gap: 7px; }
+      .tc-btn {
         border: 2px solid #51407f;
-        border-radius: 16px;
+        border-radius: 14px;
         background: linear-gradient(#3a2c63, #271c45);
         color: var(--cream);
-        font: 700 20px/1 "Press Start 2P", monospace;
-        box-shadow: 0 5px 0 #181030;
+        font: 700 13px/1 "Press Start 2P", monospace;
+        box-shadow: 0 4px 0 #181030;
         touch-action: none;
         user-select: none;
         cursor: pointer;
-        display: grid;
-        place-items: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
       }
-      #touch-controls button:active,
-      #touch-controls button.active {
-        transform: translateY(4px);
+      .tc-btn:active, .tc-btn.active {
+        transform: translateY(3px);
         box-shadow: 0 1px 0 #181030;
       }
-      #touch-controls .left  { grid-column: 1; }
-      #touch-controls .right { grid-column: 2; }
-      #touch-controls .jump {
-        grid-column: 3;
+      .tc-jump {
+        width: 100%;
+        height: 56px;
         background: linear-gradient(#ffd54a, #ffb028);
+        border-color: #ffd54a;
         color: #3a2300;
-        box-shadow: 0 5px 0 #b56b00;
-        font-size: 13px;
+        box-shadow: 0 4px 0 #b56b00;
+        font-size: 11px;
         letter-spacing: 1px;
       }
-      #touch-controls .jump:active { box-shadow: 0 1px 0 #b56b00; }
-      #touch-controls .ability {
-        grid-column: 4;
+      .tc-jump:active { box-shadow: 0 1px 0 #b56b00; }
+      .tc-ability {
+        flex: 1;
+        height: 54px;
         background: linear-gradient(#b78bff, #7d4ad0);
-        color: #1b0d33;
-        box-shadow: 0 5px 0 #4a2880;
         border-color: #b78bff;
-        font-size: 22px;
+        color: #1b0d33;
+        box-shadow: 0 4px 0 #4a2880;
+        font-size: 20px;
       }
-      #touch-controls .ability:active { box-shadow: 0 1px 0 #4a2880; }
-      #touch-controls .run {
-        grid-column: 5;
+      .tc-ability:active { box-shadow: 0 1px 0 #4a2880; }
+      .tc-run {
+        flex: 1;
+        height: 54px;
         background: linear-gradient(#8fd0ff, #4aa3e8);
         color: #08263f;
-        box-shadow: 0 5px 0 #2f6ea8;
+        box-shadow: 0 4px 0 #2f6ea8;
         font-size: 16px;
       }
-      #touch-controls .run:active { box-shadow: 0 1px 0 #2f6ea8; }
-      #touch-controls .switch-btn {
-        grid-column: 6;
-        font-size: 18px;
+      .tc-run:active { box-shadow: 0 1px 0 #2f6ea8; }
+      .tc-switch, .tc-pause, .tc-restart {
+        flex: 1;
+        height: 42px;
       }
-      #touch-controls .pause-btn {
-        grid-column: 7;
-        font-size: 14px;
-      }
-      #touch-controls .restart-btn {
-        grid-column: 7;
+      .tc-switch { font-size: 18px; }
+      .tc-pause  { font-size: 14px; }
+      .tc-restart {
         font-size: 18px;
         background: linear-gradient(#ff5b78, #c0274a);
-        color: #fff4d6;
-        box-shadow: 0 5px 0 #7a0f2a;
         border-color: #ff5b78;
+        color: #fff4d6;
+        box-shadow: 0 4px 0 #7a0f2a;
       }
-      #touch-controls .restart-btn:active { box-shadow: 0 1px 0 #7a0f2a; }
+      .tc-restart:active { box-shadow: 0 1px 0 #7a0f2a; }
       @media (max-height: 560px) {
         .titlebar { display: none; }
         body { padding: 6px; gap: 6px; }
         .wrap { max-width: min(100vw, calc(100vh * 1080 / 1440)); }
+      }
+      @media (pointer: coarse) and (max-height: 560px) {
+        #tc-move, #tc-actions { bottom: 6px; }
+        #tc-lr { height: 62px; }
+        .tc-jump { height: 46px; }
+        .tc-ability, .tc-run { height: 44px; }
+        .tc-switch, .tc-pause, .tc-restart { height: 36px; }
       }
     </style>
   </head>
@@ -229,15 +265,25 @@
         <a class="editor-link" href="./terrain-editor.html">Editor</a>
       </div>
     </div>
-    <div id="touch-controls" aria-label="Touch controls">
-      <button class="left" type="button" data-control="left" aria-label="Muovi a sinistra">◀</button>
-      <button class="right" type="button" data-control="right" aria-label="Muovi a destra">▶</button>
-      <button class="jump" type="button" data-control="jump" aria-label="Salta">▲ SALTA</button>
-      <button class="ability" type="button" data-control="ability" aria-label="Abilità speciale">★</button>
-      <button class="run" type="button" data-control="run" aria-label="Corri">⚡</button>
-      <button class="switch-btn" type="button" id="switch-btn" aria-label="Cambia personaggio">⇄</button>
-      <button class="pause-btn" type="button" id="pause-btn" aria-label="Pausa">⏸</button>
-      <button class="restart-btn" type="button" id="restart-btn" aria-label="Ricomincia" style="display: none;">↺</button>
+    <!-- D-Pad sinistra: zone con slide sinistra/destra -->
+    <div id="tc-move" aria-label="Movimento">
+      <div id="tc-lr">
+        <div class="tc-arrow tc-left-arrow"  aria-label="Sinistra">◀</div>
+        <div class="tc-arrow tc-right-arrow" aria-label="Destra">▶</div>
+      </div>
+    </div>
+    <!-- Pulsanti azione destra -->
+    <div id="tc-actions" aria-label="Azioni">
+      <button class="tc-btn tc-jump"    type="button" data-control="jump"    aria-label="Salta">▲ SALTA</button>
+      <div class="tc-row">
+        <button class="tc-btn tc-ability" type="button" data-control="ability" aria-label="Abilità">★</button>
+        <button class="tc-btn tc-run"     type="button" data-control="run"     aria-label="Corri">⚡</button>
+      </div>
+      <div class="tc-row">
+        <button class="tc-btn tc-switch"  type="button" id="switch-btn"  aria-label="Cambia personaggio">⇄</button>
+        <button class="tc-btn tc-pause"   type="button" id="pause-btn"   aria-label="Pausa">⏸</button>
+        <button class="tc-btn tc-restart" type="button" id="restart-btn" aria-label="Ricomincia" style="display:none">↺</button>
+      </div>
     </div>
     <script type="module" src="./main.js"></script>
   </body>
