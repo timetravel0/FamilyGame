@@ -700,7 +700,9 @@ function buildData() {
       terrainProfiles: level.terrainSamples.map((samples, sectionIndex) =>
         samplesToPoints(samples, levelHeight(levelIndex, sectionIndex))
       ),
-      solidSpans: deepClone(level.solidSpans)
+      solidSpans: deepClone(level.solidSpans),
+      collectibles: deepClone(level.collectibles || []),
+      enemies: deepClone(level.enemies || [])
     }))
   };
 }
@@ -754,7 +756,9 @@ async function loadTerrainFromSource(data) {
     ...level,
     terrainSamples: level.terrainProfiles.map((points, sectionIndex) =>
       pointsToSamples(points, levelHeight(index, sectionIndex))
-    )
+    ),
+    collectibles: Array.isArray(level.collectibles) ? deepClone(level.collectibles) : [],
+    enemies: Array.isArray(level.enemies) ? deepClone(level.enemies) : []
   }));
   state.lastJson = JSON.stringify(buildData(), null, 2);
   state.dirty = false;
@@ -1384,28 +1388,412 @@ async function removeSpriteOverride(path) {
   buildSpriteGrid();
 }
 
+// ═══════════════════════════════════════════════════════
+//  ENTITY EDITOR  (Gemme & Nemici)
+// ═══════════════════════════════════════════════════════
+
+const ENT_BAND_Y     = 180;
+const ENT_BAND_H     = 1050;
+const ENT_GAME_H     = 1440;
+const ENT_CANVAS_W   = 800;
+const ENT_CANVAS_H   = 200;
+
+const ENT_ENEMY_TYPES = [
+  { key: 'banditi',           label: 'Banditi',  color: '#5aa7f0' },
+  { key: 'uomini_in_giacca',  label: 'Giacca',   color: '#a07af0' },
+  { key: 'ragazzini_bulli',   label: 'Bulli',    color: '#f09a50' }
+];
+
+// Defaults matching DEFAULT_CONFIG.collectibles in main.js
+const ENT_DEFAULT_COLLECTIBLES_L1 = [
+  { section: 0, x: 220,  y: 954 }, { section: 0, x: 520,  y: 928 },
+  { section: 0, x: 840,  y: 982 }, { section: 0, x: 1260, y: 950 },
+  { section: 1, x: 164,  y: 936 }, { section: 1, x: 604,  y: 990 },
+  { section: 1, x: 1084, y: 958 }, { section: 2, x: 28,   y: 984 },
+  { section: 2, x: 628,  y: 944 }, { section: 2, x: 1288, y: 970 }
+];
+
+const ent = {
+  levelIndex:   0,
+  sectionIndex: 0,
+  subTab:       'collectibles', // 'collectibles' | 'enemies'
+  enemyType:    'banditi'
+};
+
+// Returns the world-space section width for a level
+function entSectionWidth(levelIndex) {
+  const srcH = LEVEL_CONFIGS[levelIndex]?.sourceSectionHeight || 341;
+  return Math.round(SOURCE_SECTION_WIDTH * ENT_BAND_H / srcH);
+}
+
+// Returns the mutable entity array for subTab
+function entGetAll(levelIndex, subTab) {
+  const level = state.levels[levelIndex];
+  if (!level) return [];
+  if (subTab === 'collectibles') { level.collectibles ||= []; return level.collectibles; }
+  level.enemies ||= []; return level.enemies;
+}
+
+// Items for the currently-selected section
+function entGetSection(levelIndex, sectionIndex, subTab) {
+  return entGetAll(levelIndex, subTab).filter(e => Number(e.section) === sectionIndex);
+}
+
+// Game-Y of the terrain ground at a given world X (approximated from samples)
+function entGroundY(worldX, levelIndex, sectionIndex) {
+  const srcH  = LEVEL_CONFIGS[levelIndex]?.sourceSectionHeight || 341;
+  const scale = ENT_BAND_H / srcH;
+  const srcX  = worldX / scale;
+  const idx   = Math.round(clamp(srcX, 0, SOURCE_SECTION_WIDTH - 1) / 8);
+  const samps = state.levels[levelIndex]?.terrainSamples?.[sectionIndex] || [];
+  const srcY  = samps[clamp(idx, 0, samps.length - 1)] || srcH * 0.85;
+  return ENT_BAND_Y + Math.round(srcY * scale);
+}
+
+// Draw the entity canvas
+function renderEntCanvas() {
+  const canvas = document.getElementById('ent-canvas');
+  if (!canvas || !canvas.getContext) return;
+
+  const ctx = canvas.getContext('2d');
+  const cw = ENT_CANVAS_W;
+  const ch = ENT_CANVAS_H;
+  ctx.clearRect(0, 0, cw, ch);
+
+  const lv       = ent.levelIndex;
+  const sec      = ent.sectionIndex;
+  const secW     = entSectionWidth(lv);
+  const srcH     = LEVEL_CONFIGS[lv]?.sourceSectionHeight || 341;
+  const scale    = ENT_BAND_H / srcH;
+
+  // Background strip
+  const img = bgImages[lv]?.[sec];
+  if (img?.naturalWidth) {
+    ctx.drawImage(img, 0, 0, cw, ch);
+  } else {
+    ctx.fillStyle = '#0a0618';
+    ctx.fillRect(0, 0, cw, ch);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.4)';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Terrain line
+  const samps = state.levels[lv]?.terrainSamples?.[sec] || [];
+  if (samps.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(103,217,107,.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < samps.length; i++) {
+      const worldX  = i * 8 * scale;
+      const cx      = worldX / secW * cw;
+      const gameY   = ENT_BAND_Y + samps[i] * scale;
+      const cy      = gameY / ENT_GAME_H * ch;
+      i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Entities for current section
+  const items = entGetSection(lv, sec, ent.subTab);
+  for (const item of items) {
+    const cx = item.x / secW * cw;
+    const cy = ent.subTab === 'collectibles'
+      ? (Number(item.y) || 0) / ENT_GAME_H * ch
+      : entGroundY(item.x, lv, sec) / ENT_GAME_H * ch;
+
+    if (ent.subTab === 'collectibles') {
+      ctx.save();
+      ctx.font = '18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#ffb028';
+      ctx.shadowBlur  = 8;
+      ctx.fillStyle   = '#ffd23f';
+      ctx.fillText('★', cx, cy);
+      ctx.restore();
+    } else {
+      const tInfo = ENT_ENEMY_TYPES.find(t => t.key === item.type) || ENT_ENEMY_TYPES[0];
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+      ctx.fillStyle = tInfo.color + 'bb';
+      ctx.fill();
+      ctx.strokeStyle = tInfo.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tInfo.label[0].toUpperCase(), cx, cy);
+      ctx.restore();
+    }
+  }
+
+  // Section info overlay
+  ctx.save();
+  ctx.font = '9px "Press Start 2P", monospace';
+  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  ctx.textAlign = 'left';
+  ctx.fillText(`SEZ ${sec + 1}   W:${secW}   ${items.length} elementi`, 8, 14);
+  ctx.restore();
+}
+
+// Rebuild the list of all entities for the current level+subTab
+function buildEntList() {
+  const list    = document.getElementById('ent-list');
+  const countEl = document.getElementById('ent-count');
+  if (!list) return;
+
+  const allItems = entGetAll(ent.levelIndex, ent.subTab);
+  if (countEl) countEl.textContent = `${allItems.length} tot.`;
+
+  list.innerHTML = '';
+  if (allItems.length === 0) {
+    list.innerHTML = '<div style="padding:12px 14px;color:#555;font-size:13px">Nessun elemento</div>';
+    return;
+  }
+
+  const sorted = allItems
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => (a.item.section - b.item.section) || (a.item.x - b.item.x));
+
+  for (const { item } of sorted) {
+    const row    = document.createElement('div');
+    row.className = 'ent-item';
+
+    const badge  = document.createElement('span');
+    badge.className = 'ent-sec-badge';
+    badge.textContent = `S${Number(item.section) + 1}`;
+
+    const coords = document.createElement('span');
+    coords.className = 'ent-coords';
+    if (ent.subTab === 'collectibles') {
+      coords.textContent = `x:${Math.round(item.x)}  y:${Math.round(item.y || 0)}`;
+    } else {
+      const tInfo = ENT_ENEMY_TYPES.find(t => t.key === item.type) || ENT_ENEMY_TYPES[0];
+      coords.innerHTML  = `<span style="color:${tInfo.color}">${tInfo.label}</span>  x:${Math.round(item.x)}`;
+    }
+
+    const rmBtn  = document.createElement('button');
+    rmBtn.className = 'ent-remove';
+    rmBtn.textContent = '×';
+    rmBtn.title = 'Rimuovi';
+    rmBtn.addEventListener('click', () => {
+      const idx = allItems.indexOf(item);
+      if (idx >= 0) { allItems.splice(idx, 1); state.dirty = true; }
+      buildEntList();
+      renderEntCanvas();
+    });
+
+    row.appendChild(badge);
+    row.appendChild(coords);
+    row.appendChild(rmBtn);
+    list.appendChild(row);
+  }
+}
+
+// Build level selector tabs
+function buildEntLevelTabs() {
+  const el = document.getElementById('ent-level-tabs');
+  if (!el) return;
+  el.innerHTML = '';
+  LEVEL_CONFIGS.forEach((cfg, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'ent-mini-tab' + (i === ent.levelIndex ? ' active' : '');
+    btn.textContent = cfg.title;
+    btn.addEventListener('click', () => {
+      ent.levelIndex   = i;
+      ent.sectionIndex = 0;
+      buildEntLevelTabs();
+      buildEntSectionTabs();
+      buildEntList();
+      renderEntCanvas();
+    });
+    el.appendChild(btn);
+  });
+}
+
+// Build section selector tabs
+function buildEntSectionTabs() {
+  const el = document.getElementById('ent-section-tabs');
+  if (!el) return;
+  el.innerHTML = '';
+  const count = state.levels[ent.levelIndex]?.segments?.length
+    || LEVEL_CONFIGS[ent.levelIndex]?.segments?.length || 3;
+  for (let i = 0; i < count; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'ent-mini-tab' + (i === ent.sectionIndex ? ' active' : '');
+    btn.textContent = String(i + 1);
+    btn.addEventListener('click', () => {
+      ent.sectionIndex = i;
+      buildEntSectionTabs();
+      renderEntCanvas();
+    });
+    el.appendChild(btn);
+  }
+}
+
+// Build enemy-type selector tabs
+function buildEntTypeTabs() {
+  const el = document.getElementById('ent-type-tabs');
+  if (!el) return;
+  el.innerHTML = '';
+  ENT_ENEMY_TYPES.forEach(type => {
+    const btn = document.createElement('button');
+    btn.className = 'ent-mini-tab' + (type.key === ent.enemyType ? ' active' : '');
+    btn.textContent = type.label;
+    btn.style.borderColor = type.color;
+    btn.addEventListener('click', () => {
+      ent.enemyType = type.key;
+      buildEntTypeTabs();
+    });
+    el.appendChild(btn);
+  });
+}
+
+// Switch gemme / nemici sub-tab
+function switchEntSubTab(subTab) {
+  ent.subTab = subTab;
+  document.querySelectorAll('.ent-subtab').forEach(b =>
+    b.classList.toggle('active', b.dataset.entSub === subTab)
+  );
+  const tg = document.getElementById('ent-type-group');
+  if (tg) tg.style.display = subTab === 'enemies' ? 'flex' : 'none';
+  buildEntList();
+  renderEntCanvas();
+}
+
+// Initialise the entity editor
+function initEntityEditor() {
+  // Sub-tabs
+  document.querySelectorAll('.ent-subtab').forEach(btn =>
+    btn.addEventListener('click', () => switchEntSubTab(btn.dataset.entSub))
+  );
+
+  // Main tab button
+  document.getElementById('tab-entities')?.addEventListener('click', () => switchMainTab('entities'));
+
+  // Save
+  document.getElementById('ent-save-btn')?.addEventListener('click', async () => {
+    await saveToSQLiteAndLocalStorage();
+    const el = document.getElementById('ent-status');
+    if (el) { el.textContent = 'Salvato!'; setTimeout(() => { el.textContent = ''; }, 2000); }
+  });
+
+  // Clear section
+  document.getElementById('ent-clear-btn')?.addEventListener('click', () => {
+    const arr = entGetAll(ent.levelIndex, ent.subTab);
+    const before = arr.length;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (Number(arr[i].section) === ent.sectionIndex) arr.splice(i, 1);
+    }
+    if (arr.length < before) state.dirty = true;
+    buildEntList();
+    renderEntCanvas();
+  });
+
+  // Reset to defaults
+  document.getElementById('ent-reset-btn')?.addEventListener('click', () => {
+    if (!confirm('Resettare entità del livello corrente ai valori di default?')) return;
+    const level = state.levels[ent.levelIndex];
+    if (!level) return;
+    if (ent.levelIndex === 0) {
+      level.collectibles = deepClone(ENT_DEFAULT_COLLECTIBLES_L1);
+    } else {
+      level.collectibles = [];
+    }
+    level.enemies = [];
+    state.dirty = true;
+    buildEntList();
+    renderEntCanvas();
+    const el = document.getElementById('ent-status');
+    if (el) { el.textContent = 'Reset eseguito'; setTimeout(() => { el.textContent = ''; }, 2000); }
+  });
+
+  // Canvas click: add or remove entity
+  const canvas = document.getElementById('ent-canvas');
+  canvas?.addEventListener('click', (e) => {
+    const rect  = canvas.getBoundingClientRect();
+    const px    = (e.clientX - rect.left)  * (ENT_CANVAS_W / rect.width);
+    const py    = (e.clientY - rect.top)   * (ENT_CANVAS_H / rect.height);
+    const secW  = entSectionWidth(ent.levelIndex);
+    const worldX = px / ENT_CANVAS_W * secW;
+    const gameY  = py / ENT_CANVAS_H * ENT_GAME_H;
+
+    const allItems = entGetAll(ent.levelIndex, ent.subTab);
+    const secItems = entGetSection(ent.levelIndex, ent.sectionIndex, ent.subTab);
+
+    // Check if clicking near an existing item (16px canvas-pixel radius)
+    let hit = null;
+    for (const item of secItems) {
+      const icx = item.x / secW * ENT_CANVAS_W;
+      const icy = ent.subTab === 'collectibles'
+        ? (Number(item.y) || 0) / ENT_GAME_H * ENT_CANVAS_H
+        : entGroundY(item.x, ent.levelIndex, ent.sectionIndex) / ENT_GAME_H * ENT_CANVAS_H;
+      if (Math.hypot(px - icx, py - icy) < 16) { hit = item; break; }
+    }
+
+    if (hit) {
+      const idx = allItems.indexOf(hit);
+      if (idx >= 0) allItems.splice(idx, 1);
+    } else {
+      if (ent.subTab === 'collectibles') {
+        allItems.push({ section: ent.sectionIndex, x: Math.round(worldX), y: Math.round(gameY) });
+      } else {
+        allItems.push({ section: ent.sectionIndex, x: Math.round(worldX), type: ent.enemyType });
+      }
+    }
+    state.dirty = true;
+    buildEntList();
+    renderEntCanvas();
+  });
+
+  // Build initial UI
+  buildEntLevelTabs();
+  buildEntSectionTabs();
+  buildEntTypeTabs();
+  buildEntList();
+}
+
 // ── Tab switching ─────────────────────────────────────
 
 function switchMainTab(tab) {
   const panelTerrain  = document.getElementById('panel-terrain');
   const panelSprites  = document.getElementById('panel-sprites');
+  const panelEntities = document.getElementById('panel-entities');
   const terrainCtrl   = document.getElementById('terrain-controls');
   const topbarDesc    = document.getElementById('topbar-desc');
   const tabTerrain    = document.getElementById('tab-terrain');
   const tabSprites    = document.getElementById('tab-sprites');
+  const tabEntities   = document.getElementById('tab-entities');
+
+  panelTerrain?.classList.add('panel-hidden');
+  panelSprites?.classList.add('panel-hidden');
+  panelEntities?.classList.add('panel-hidden');
+  terrainCtrl?.classList.add('panel-hidden');
+  tabTerrain?.classList.remove('active');
+  tabSprites?.classList.remove('active');
+  tabEntities?.classList.remove('active');
 
   if (tab === 'terrain') {
     panelTerrain?.classList.remove('panel-hidden');
-    panelSprites?.classList.add('panel-hidden');
     terrainCtrl?.classList.remove('panel-hidden');
     tabTerrain?.classList.add('active');
-    tabSprites?.classList.remove('active');
     if (topbarDesc) topbarDesc.textContent = 'Terreno: disegna la linea verde. Buco: trascina per aprire un vuoto. Ripara buco: trascina sopra il vuoto per richiuderlo. Salva in localStorage oppure esporta il JSON che il gioco legge automaticamente.';
+  } else if (tab === 'entities') {
+    panelEntities?.classList.remove('panel-hidden');
+    tabEntities?.classList.add('active');
+    if (topbarDesc) topbarDesc.textContent = 'Entità: clicca sul canvas per aggiungere gemme o nemici. Clicca su un\'entità esistente per rimuoverla. Salva per esportare il JSON.';
+    buildEntLevelTabs();
+    buildEntSectionTabs();
+    buildEntTypeTabs();
+    buildEntList();
+    renderEntCanvas();
   } else {
-    panelTerrain?.classList.add('panel-hidden');
     panelSprites?.classList.remove('panel-hidden');
-    terrainCtrl?.classList.add('panel-hidden');
-    tabTerrain?.classList.remove('active');
     tabSprites?.classList.add('active');
     if (topbarDesc) topbarDesc.textContent = 'Visualizza, sostituisci e modifica pixel per pixel ogni sprite del gioco. Le modifiche vengono salvate localmente e caricate automaticamente dal gioco.';
     buildEntityTabs();
@@ -1428,6 +1816,7 @@ function initSpriteEditor() {
   // Main tabs
   document.getElementById('tab-terrain')?.addEventListener('click', () => switchMainTab('terrain'));
   document.getElementById('tab-sprites')?.addEventListener('click', () => switchMainTab('sprites'));
+  document.getElementById('tab-entities')?.addEventListener('click', () => switchMainTab('entities'));
 
   // Pixel editor tools
   document.querySelectorAll('.pe-tool').forEach(btn => {
@@ -1524,6 +1913,7 @@ async function init() {
 
   await loadOverridesFromServer();
   initSpriteEditor();
+  initEntityEditor();
 }
 
 init();

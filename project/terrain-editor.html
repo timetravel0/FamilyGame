@@ -164,6 +164,95 @@
       .level-tabs button.active:active { box-shadow: 0 0 0 #b56b00; }
       .legend span { display: inline-flex; align-items: center; gap: 8px; }
       .swatch { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+      /* ── Entity editor ──────────────────────────────── */
+      .ent-toprow {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+      }
+      .ent-group { display: flex; align-items: center; gap: 8px; }
+      .ent-label {
+        font: 700 9px/1 "Press Start 2P", monospace;
+        color: #9b8fcc; white-space: nowrap;
+      }
+      .ent-mini-tabs { display: flex; gap: 5px; flex-wrap: wrap; }
+      .ent-mini-tab {
+        font: 700 9px/1 "Press Start 2P", monospace;
+        padding: 7px 10px; border-radius: 8px;
+        border: 2px solid #51407f;
+        background: linear-gradient(#3a2c63, #271c45);
+        color: var(--text); cursor: pointer; box-shadow: 0 3px 0 #181030;
+      }
+      .ent-mini-tab:active { transform: translateY(2px); box-shadow: 0 1px 0 #181030; }
+      .ent-mini-tab.active {
+        background: linear-gradient(#ffd54a, #ffb028);
+        color: #3a2300; border-color: transparent; box-shadow: 0 3px 0 #b56b00;
+      }
+      .ent-subtabs { display: flex; gap: 8px; margin-bottom: 12px; }
+      .ent-subtab {
+        font: 700 11px/1 "Press Start 2P", monospace;
+        padding: 9px 16px; border-radius: 10px;
+        border: 2px solid #51407f;
+        background: linear-gradient(#3a2c63, #271c45);
+        color: var(--text); cursor: pointer; box-shadow: 0 4px 0 #181030;
+      }
+      .ent-subtab:active { transform: translateY(3px); box-shadow: 0 1px 0 #181030; }
+      .ent-subtab[data-ent-sub="collectibles"].active {
+        background: linear-gradient(#ffd54a, #ffb028); color: #3a2300;
+        border-color: transparent; box-shadow: 0 4px 0 #b56b00;
+      }
+      .ent-subtab[data-ent-sub="enemies"].active {
+        background: linear-gradient(#ff5b78, #c0274a); color: #fff4d6;
+        border-color: #ff5b78; box-shadow: 0 4px 0 #7a0f2a;
+      }
+      .ent-canvas-wrap {
+        position: relative; border-radius: 14px; overflow: hidden;
+        border: 2px solid var(--line); background: #0b0818;
+        box-shadow: inset 0 0 20px rgba(0,0,0,.4); cursor: crosshair; margin-bottom: 12px;
+      }
+      #ent-canvas {
+        display: block; width: 100%; height: auto;
+        image-rendering: pixelated; border: none;
+      }
+      .ent-hint {
+        position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+        font: 700 8px/1 "Press Start 2P", monospace;
+        color: rgba(255,255,255,.4); pointer-events: none; white-space: nowrap;
+      }
+      .ent-list-wrap {
+        border: 2px solid var(--line); border-radius: 14px;
+        background: rgba(20,12,42,.8); overflow: hidden; margin-bottom: 12px;
+      }
+      .ent-list-head {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 14px; border-bottom: 1px solid var(--line);
+        font: 700 9px/1 "Press Start 2P", monospace; color: #9b8fcc;
+      }
+      .ent-list { max-height: 200px; overflow-y: auto; }
+      .ent-item {
+        display: grid; grid-template-columns: 60px 1fr auto;
+        gap: 8px; align-items: center;
+        padding: 6px 14px; border-bottom: 1px solid rgba(74,58,120,.35);
+        font-size: 13px; font-weight: 600;
+      }
+      .ent-item:last-child { border-bottom: none; }
+      .ent-item:hover { background: rgba(255,255,255,.03); }
+      .ent-sec-badge {
+        font: 700 8px/1 "Press Start 2P", monospace;
+        padding: 3px 7px; border-radius: 6px;
+        background: rgba(74,58,120,.6); color: #c9bff0;
+      }
+      .ent-coords { color: #9b8fcc; font-size: 12px; }
+      .ent-remove {
+        font-size: 14px; padding: 2px 8px; border-radius: 6px;
+        border: 1px solid rgba(255,91,120,.4);
+        background: rgba(255,91,120,.15); color: #ff5b78;
+        cursor: pointer; box-shadow: none; min-width: 0;
+        font-family: monospace; font-weight: 700;
+      }
+      .ent-remove:hover { background: rgba(255,91,120,.35); }
+      .ent-remove:active { transform: none; }
+      .ent-bottom-row {
+        display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      }
       /* ── Sprite panel ────────────────────────────────── */
       .sp-shell {
         display: grid;
@@ -331,6 +420,7 @@
           <div class="main-tabs">
             <button class="main-tab active" id="tab-terrain">Terreno</button>
             <button class="main-tab" id="tab-sprites">Sprite &amp; Sfondi</button>
+            <button class="main-tab" id="tab-entities">Entità</button>
           </div>
         </div>
         <p id="topbar-desc">Terreno: disegna la linea verde. Buco: trascina per aprire un vuoto. Ripara buco: trascina sopra il vuoto per richiuderlo. Salva in localStorage oppure esporta il JSON che il gioco legge automaticamente.</p>
@@ -428,6 +518,58 @@
           </div>
 
         </div>
+      </div>
+
+      <!-- ── Entità editor panel ──────────────────────── -->
+      <div id="panel-entities" class="panel-hidden">
+
+        <!-- Level / section / type selectors + action buttons -->
+        <div class="ent-toprow">
+          <div class="ent-group">
+            <span class="ent-label">Livello</span>
+            <div class="ent-mini-tabs" id="ent-level-tabs"></div>
+          </div>
+          <div class="ent-group">
+            <span class="ent-label">Sezione</span>
+            <div class="ent-mini-tabs" id="ent-section-tabs"></div>
+          </div>
+          <div class="ent-group" id="ent-type-group" style="display:none">
+            <span class="ent-label">Tipo</span>
+            <div class="ent-mini-tabs" id="ent-type-tabs"></div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <button class="danger" id="ent-clear-btn" type="button">Svuota sezione</button>
+            <button class="primary" id="ent-save-btn" type="button">💾 Salva</button>
+          </div>
+        </div>
+
+        <!-- Sub-tabs: Gemme / Nemici -->
+        <div class="ent-subtabs">
+          <button class="ent-subtab active" data-ent-sub="collectibles" type="button">★ Gemme</button>
+          <button class="ent-subtab"        data-ent-sub="enemies"      type="button">⚔ Nemici</button>
+        </div>
+
+        <!-- Canvas preview with placement interaction -->
+        <div class="ent-canvas-wrap">
+          <canvas id="ent-canvas" width="800" height="200"></canvas>
+          <div class="ent-hint">Clicca per aggiungere · Clicca su un elemento per rimuoverlo</div>
+        </div>
+
+        <!-- Full list of placed items for the current level -->
+        <div class="ent-list-wrap">
+          <div class="ent-list-head">
+            <span>Elementi nel livello</span>
+            <span id="ent-count" style="color:#c9bff0;font-size:10px"></span>
+          </div>
+          <div class="ent-list" id="ent-list"></div>
+        </div>
+
+        <!-- Bottom: reset + status -->
+        <div class="ent-bottom-row">
+          <button class="danger" id="ent-reset-btn" type="button">Reset default</button>
+          <span id="ent-status" style="font-size:13px;font-weight:600;color:#8fd0ff"></span>
+        </div>
+
       </div>
 
     </div>
