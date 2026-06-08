@@ -25,11 +25,18 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `, (err) => {
-      if (err) {
-        console.error('Error creating table:', err.message);
-      } else {
-        console.log('Terrain table ready');
-      }
+      if (err) { console.error('Error creating terrain table:', err.message); }
+      else { console.log('Terrain table ready'); }
+    });
+    db.run(`
+      CREATE TABLE IF NOT EXISTS sprites (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        data TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) { console.error('Error creating sprites table:', err.message); }
+      else { console.log('Sprites table ready'); }
     });
   }
 });
@@ -81,6 +88,30 @@ app.post('/api/terrain', (req, res) => {
       
       console.log('Terrain saved to SQLite');
       res.json({ success: true, timestamp: new Date().toISOString() });
+    }
+  );
+});
+
+// API: Get sprite overrides
+app.get('/api/sprites', (req, res) => {
+  db.get('SELECT data FROM sprites WHERE id = 1', [], (err, row) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    res.json(row ? JSON.parse(row.data) : null);
+  });
+});
+
+// API: Save sprite overrides
+app.post('/api/sprites', (req, res) => {
+  const data = req.body;
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Invalid data' });
+  const json = JSON.stringify(data);
+  db.run(
+    `INSERT INTO sprites (id, data, updated_at) VALUES (1, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(id) DO UPDATE SET data = ?, updated_at = CURRENT_TIMESTAMP`,
+    [json, json],
+    function(err) {
+      if (err) return res.status(500).json({ error: 'Failed to save sprites' });
+      res.json({ success: true });
     }
   );
 });
