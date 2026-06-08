@@ -132,9 +132,9 @@
         position: fixed;
         left: 12px;
         bottom: 12px;
-        grid-template-columns: repeat(3, 72px) 56px 56px;
-        grid-template-rows: 74px;
-        gap: 8px;
+        grid-template-columns: repeat(3, 64px) 64px 52px 52px 52px;
+        grid-template-rows: 68px;
+        gap: 7px;
         padding: 10px;
         border: 2px solid var(--line);
         border-radius: 16px;
@@ -176,20 +176,33 @@
         letter-spacing: 1px;
       }
       #touch-controls .jump:active { box-shadow: 0 1px 0 #b56b00; }
-      #touch-controls .run {
+      #touch-controls .ability {
         grid-column: 4;
+        background: linear-gradient(#b78bff, #7d4ad0);
+        color: #1b0d33;
+        box-shadow: 0 5px 0 #4a2880;
+        border-color: #b78bff;
+        font-size: 22px;
+      }
+      #touch-controls .ability:active { box-shadow: 0 1px 0 #4a2880; }
+      #touch-controls .run {
+        grid-column: 5;
         background: linear-gradient(#8fd0ff, #4aa3e8);
         color: #08263f;
         box-shadow: 0 5px 0 #2f6ea8;
-        font-size: 18px;
+        font-size: 16px;
       }
       #touch-controls .run:active { box-shadow: 0 1px 0 #2f6ea8; }
+      #touch-controls .switch-btn {
+        grid-column: 6;
+        font-size: 18px;
+      }
       #touch-controls .pause-btn {
-        grid-column: 5;
+        grid-column: 7;
         font-size: 14px;
       }
       #touch-controls .restart-btn {
-        grid-column: 5;
+        grid-column: 7;
         font-size: 18px;
         background: linear-gradient(#ff5b78, #c0274a);
         color: #fff4d6;
@@ -220,7 +233,9 @@
       <button class="left" type="button" data-control="left" aria-label="Muovi a sinistra">◀</button>
       <button class="right" type="button" data-control="right" aria-label="Muovi a destra">▶</button>
       <button class="jump" type="button" data-control="jump" aria-label="Salta">▲ SALTA</button>
+      <button class="ability" type="button" data-control="ability" aria-label="Abilità speciale">★</button>
       <button class="run" type="button" data-control="run" aria-label="Corri">⚡</button>
+      <button class="switch-btn" type="button" id="switch-btn" aria-label="Cambia personaggio">⇄</button>
       <button class="pause-btn" type="button" id="pause-btn" aria-label="Pausa">⏸</button>
       <button class="restart-btn" type="button" id="restart-btn" aria-label="Ricomincia" style="display: none;">↺</button>
     </div>

@@ -485,8 +485,20 @@ const controls = {
   run: false,
   jump: false,
   up: false,
-  down: false
+  down: false,
+  ability: false
 };
+
+// Abilità uniche per personaggio. cooldown 0 = abilità contestuale (legata al salto/caduta)
+const ABILITIES = {
+  dad:  { name: 'SPINTA',  cooldown: 3.5, color: '#32b4ea', hint: 'Onda d urto: stordisce i nemici vicini' },
+  mom:  { name: 'DOPPIO SALTO', cooldown: 0, color: '#ff6f91', hint: 'Premi salto di nuovo a mezz aria' },
+  kid:  { name: 'PLANATA', cooldown: 0, color: '#56de61', hint: 'Tieni premuto abilità per planare' },
+  teen: { name: 'SCATTO',  cooldown: 1.6, color: '#ffbf38', hint: 'Scatto orizzontale veloce' }
+};
+const GLIDE_MAX_FALL = 360;     // velocità di caduta massima durante la planata del Bimbo
+const DASH_SPEED_MULT = 1.7;    // moltiplicatore velocità durante lo scatto del Teen
+const DASH_DURATION = 0.18;
 
 const game = {
   screen: GAME_SCREENS.TITLE_SCREEN,
@@ -524,7 +536,11 @@ const game = {
   collectibles: [],
   particles: [],
   enemies: [],
-  enemyHitCooldown: 0
+  enemyHitCooldown: 0,
+  abilityCooldown: 0,
+  doubleJumpUsed: false,
+  dashTimer: 0,
+  shockwave: null
 };
 
 // Physics constants (computed from config in applyConfig)
@@ -731,6 +747,9 @@ function setControlState(name, pressed) {
   if (name === 'jump' && pressed && game.screen !== GAME_SCREENS.CHARACTER_SELECT) {
     game.jumpBuffer = JUMP_BUFFER_TIME;
   }
+  if (name === 'ability' && pressed) {
+    triggerAbility();
+  }
   const button = document.querySelector(`#touch-controls [data-control="${name}"]`);
   if (button) {
     button.classList.toggle('active', pressed);
@@ -783,6 +802,18 @@ function bindRestartButton() {
   });
 }
 
+function bindSwitchButton() {
+  const btn = document.getElementById('switch-btn');
+  if (!btn) return;
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (audio.init) audio.init();
+    btn.setPointerCapture(e.pointerId);
+    cycleActiveCharacter(1);
+  });
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
 function updateRestartButtonVisibility() {
   const btn = document.getElementById('restart-btn');
   if (!btn) return;
@@ -793,6 +824,13 @@ function updateRestartButtonVisibility() {
   const pauseBtn = document.getElementById('pause-btn');
   if (pauseBtn) {
     pauseBtn.style.display = shouldShow ? 'none' : 'block';
+  }
+
+  // Il pulsante "cambia personaggio" serve solo in modalità famiglia durante il gioco
+  const switchBtn = document.getElementById('switch-btn');
+  if (switchBtn) {
+    const showSwitch = game.screen === GAME_SCREENS.PLAYING && game.family.length > 1;
+    switchBtn.style.display = showSwitch ? 'block' : 'none';
   }
 }
 
@@ -1182,7 +1220,8 @@ function seedEnemies() {
         attackLock: false,
         damageDealt: false,
         action: 'idle',
-        defeated: false
+        defeated: false,
+        stunTimer: 0
       });
     }
   }
@@ -1200,6 +1239,89 @@ function getActiveFormation() {
   }
   const selected = formation.find((member) => member.key === game.selectedCharacter) || formation[0];
   return [{ ...selected, dx: 0, dy: 0 }];
+}
+
+// Personaggio attualmente controllato (sempre in testa al gruppo)
+function getActiveKey() {
+  return game.family[0]?.sprite || game.selectedCharacter;
+}
+
+// Cicla quale membro della famiglia è controllato (solo in modalità "famiglia")
+function cycleActiveCharacter(direction = 1) {
+  if (game.screen !== GAME_SCREENS.PLAYING || game.family.length <= 1) {
+    return;
+  }
+  if (direction >= 0) {
+    game.family.push(game.family.shift());   // il prossimo passa in testa
+  } else {
+    game.family.unshift(game.family.pop());
+  }
+  game.doubleJumpUsed = false;
+  game.jumpLock = false;
+  game.dashTimer = 0;
+  const leader = game.family[0];
+  const opt = characterOptions.find((o) => o.key === leader.sprite);
+  spawnText(leader.x, leader.y - 150, (opt?.label || leader.sprite).toUpperCase(), opt?.color || '#fff4d6', 0.95);
+  if (audio.checkpoint) audio.checkpoint();
+}
+
+function doShockwave(player) {
+  const radius = 380;
+  game.shockwave = { x: player.x, y: player.y - 70, age: 0, maxAge: 0.45, radius, color: ABILITIES.dad.color };
+  spawnText(player.x, player.y - 150, 'SPINTA!', ABILITIES.dad.color, 0.95);
+  for (const enemy of game.enemies) {
+    if (enemy.defeated || enemy.section !== game.currentSection) {
+      continue;
+    }
+    if (Math.abs(enemy.x - player.x) < radius) {
+      enemy.stunTimer = 2.2;
+      enemy.attackTimer = 0;
+      enemy.attackCooldown = 0;
+      enemy.damageDealt = false;
+      const kdir = Math.sign(enemy.x - player.x) || 1;
+      enemy.vx = kdir * 1000;
+      spawnText(enemy.x, enemy.y - 90, 'STUN', '#bfe7ff', 0.7);
+    }
+  }
+  if (audio.fall) audio.fall();
+}
+
+// Attiva l'abilità del personaggio controllato (chiamata sul fronte di pressione)
+function triggerAbility() {
+  if (game.screen !== GAME_SCREENS.PLAYING) {
+    return;
+  }
+  const player = game.family[0];
+  if (!player) {
+    return;
+  }
+  const key = getActiveKey();
+
+  if (key === 'dad') {
+    if (game.abilityCooldown > 0) return;
+    doShockwave(player);
+    game.abilityCooldown = ABILITIES.dad.cooldown;
+  } else if (key === 'teen') {
+    if (game.abilityCooldown > 0) return;
+    const dir = player.facing || 1;
+    player.vx = dir * PLAYER_RUN_MAX_SPEED * DASH_SPEED_MULT;
+    game.dashTimer = DASH_DURATION;
+    game.abilityCooldown = ABILITIES.teen.cooldown;
+    spawnText(player.x, player.y - 150, 'SCATTO!', ABILITIES.teen.color, 0.9);
+    if (audio.jump) audio.jump();
+  } else if (key === 'mom') {
+    // Doppio salto: solo a mezz aria e non ancora usato
+    if (!player.grounded && !game.doubleJumpUsed) {
+      player.vy = -JUMP_VELOCITY * 0.92;
+      game.doubleJumpUsed = true;
+      for (const m of game.family) {
+        if (m !== player && !m.grounded) m.vy = -JUMP_VELOCITY * 0.85;
+      }
+      spawnText(player.x, player.y - 130, '✦ SALTO', ABILITIES.mom.color, 0.85);
+      if (audio.jump) audio.jump();
+    }
+  }
+  // 'kid' (PLANATA) è gestita nel loop di gravità finché controls.ability è premuto
 }
 
 function createFamilyMember(def, x, sectionIndex, index) {
@@ -1341,6 +1463,11 @@ function resetGame() {
   game.particles = [];
   game.enemies = [];
   game.enemyHitCooldown = 0;
+  game.abilityCooldown = 0;
+  game.doubleJumpUsed = false;
+  game.dashTimer = 0;
+  game.shockwave = null;
+  controls.ability = false;
   game.totalGems = Number(config.game.totalGems) || DEFAULT_CONFIG.game.totalGems;
   game.completed = false;
   game.lives = Number(config.game.startLives) || DEFAULT_CONFIG.game.startLives;
@@ -1461,6 +1588,50 @@ function drawParty(t, cameraX = 0) {
   for (const member of game.family) {
     drawSpriteMember(member, t, cameraX);
   }
+  // Indicatore sul personaggio controllato (solo in modalità famiglia)
+  if (game.family.length > 1) {
+    const leader = game.family[0];
+    const opt = characterOptions.find((o) => o.key === leader.sprite);
+    const color = opt?.color || '#ffd23f';
+    const bob = Math.sin(t * 0.006) * 6;
+    const x = leader.x - cameraX;
+    const y = leader.y - leader.scale * 150 - 36 + bob;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#020816';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(x - 18, y);
+    ctx.lineTo(x + 18, y);
+    ctx.lineTo(x, y + 22);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawShockwave(cameraX = 0) {
+  const sw = game.shockwave;
+  if (!sw) {
+    return;
+  }
+  const progress = sw.age / sw.maxAge;
+  const r = sw.radius * progress;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - progress);
+  ctx.strokeStyle = sw.color;
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(sw.x - cameraX, sw.y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = Math.max(0, 0.8 - progress);
+  ctx.beginPath();
+  ctx.arc(sw.x - cameraX, sw.y, r * 0.7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawLampAndSign(offsetX = 0) {
@@ -1544,6 +1715,34 @@ function drawHUD(t) {
   if (game.combo >= 2) {
     const pulseScale = 0.85 + game.comboPulse * 1.2;
     pxText(`×${game.combo} COMBO`, WIDTH / 2, 168, palette.gold1, pulseScale, 'center');
+  }
+
+  drawAbilityIndicator();
+}
+
+function drawAbilityIndicator() {
+  const key = getActiveKey();
+  const ab = ABILITIES[key];
+  if (!ab) {
+    return;
+  }
+  const w = 168;
+  const h = 96;
+  const x = WIDTH - w - 12;
+  const y = 172;
+  const hasCooldown = ab.cooldown > 0;
+  const ready = !hasCooldown || game.abilityCooldown <= 0;
+
+  pixelRect(x, y, w, h, '#020816');
+  pixelRect(x + 4, y + 4, w - 8, 8, ab.color);
+  pxText(ab.name, x + w / 2, y + 18, ready ? ab.color : '#6a7b90', 0.5, 'center');
+
+  if (hasCooldown) {
+    const ratio = ready ? 1 : 1 - game.abilityCooldown / ab.cooldown;
+    drawBar(x + 14, y + 50, w - 28, 22, ratio, ready ? ab.color : '#3a78c0');
+    pxText(ready ? 'PRONTO' : '...', x + w / 2, y + 74, ready ? '#8dff8f' : '#9fb6cf', 0.36, 'center');
+  } else {
+    pxText('SEMPRE PRONTO', x + w / 2, y + 56, '#8dff8f', 0.34, 'center');
   }
 }
 
@@ -1710,8 +1909,14 @@ function drawCharacterSelection(t) {
   pixelRect(200, 948, 680, 130, '#020816');
   pixelRect(210, 958, 660, 110, '#07152a');
   pixelRect(200, 1070, 680, 8, selected.color);
-  pxText(selected.label, WIDTH / 2, 970, selected.color, 0.74, 'center');
-  pxText(selected.description.toUpperCase(), WIDTH / 2, 1028, '#ffffff', 0.43, 'center');
+  pxText(selected.label, WIDTH / 2, 968, selected.color, 0.72, 'center');
+  pxText(selected.description.toUpperCase(), WIDTH / 2, 1012, '#ffffff', 0.4, 'center');
+  const selAbility = ABILITIES[selected.key];
+  if (selAbility) {
+    pxText(`ABILITA: ${selAbility.name}`, WIDTH / 2, 1046, selAbility.color, 0.42, 'center');
+  } else {
+    pxText('CAMBIA EROE CON Q/E - OGNUNO HA LA SUA ABILITA', WIDTH / 2, 1046, '#ffe66d', 0.34, 'center');
+  }
 
   selectionHitBoxes.confirm = { x: 348, y: 1122, w: 384, h: 92 };
   pixelRect(348, 1122, 384, 92, '#0b531f');
@@ -1720,6 +1925,7 @@ function drawCharacterSelection(t) {
 
   pxText('←  →  CAMBIA', 300, 1248, '#ffe66d', 0.54, 'center');
   pxText('INVIO / SPAZIO  GIOCA', 780, 1248, '#9dd3ff', 0.54, 'center');
+  pxText('IN GIOCO:  F ABILITA   Q/E CAMBIA EROE', WIDTH / 2, 1306, '#b78bff', 0.44, 'center');
 }
 
 function drawSparkles(t) {
@@ -1786,6 +1992,15 @@ function drawEnemies(cameraX = 0) {
       continue;
     }
     drawEnemy(enemy, cameraX);
+    if (enemy.stunTimer > 0) {
+      const t = performance.now();
+      const cx = enemy.x - cameraX;
+      const cy = enemy.y - Math.max(118, (enemy.scale || 1) * 132) - 18;
+      for (let i = 0; i < 3; i++) {
+        const a = t * 0.006 + (i * Math.PI * 2) / 3;
+        pxText('✦', cx + Math.cos(a) * 26, cy + Math.sin(a) * 10, '#bfe7ff', 0.42, 'center');
+      }
+    }
   }
 }
 
@@ -1818,6 +2033,20 @@ function updateEnemies(dt, player) {
         audio.collectStar();
         continue;
       }
+    }
+
+    // Nemico stordito dall'onda d'urto del Papà: passivo, scivola e non attacca
+    if (enemy.stunTimer > 0) {
+      enemy.stunTimer = Math.max(0, enemy.stunTimer - dt);
+      enemy.action = 'idle';
+      enemy.x = clamp(enemy.x + enemy.vx * dt, 140, game.worldWidth - 140);
+      enemy.vx *= Math.pow(0.86, dt * 60);
+      const stunSurfaceY = getTerrainSurfaceAt(enemy.x, enemy.section);
+      if (stunSurfaceY !== null) {
+        enemy.y = stunSurfaceY;
+        enemy.grounded = true;
+      }
+      continue;
     }
 
     const tryStompOrDamage = () => {
@@ -1958,6 +2187,7 @@ function drawWorld(cameraX, t) {
   drawCollectibleLayer(t, cameraX);
   drawParty(t, cameraX);
   drawEnemies(cameraX);
+  drawShockwave(cameraX);
   drawParticles(cameraX);
 }
 
@@ -1977,6 +2207,12 @@ function updateGame(dt) {
   }
 
   game.timer = Math.max(0, game.timer - dt);
+  game.abilityCooldown = Math.max(0, game.abilityCooldown - dt);
+  if (game.dashTimer > 0) game.dashTimer = Math.max(0, game.dashTimer - dt);
+  if (game.shockwave) {
+    game.shockwave.age += dt;
+    if (game.shockwave.age >= game.shockwave.maxAge) game.shockwave = null;
+  }
   if (game.comboTimer > 0) {
     game.comboTimer = Math.max(0, game.comboTimer - dt);
   } else {
@@ -2015,6 +2251,11 @@ function updateGame(dt) {
     player.vx *= drag;
   }
   player.vx = clamp(player.vx, -maxSpeed, maxSpeed);
+
+  // Scatto del Teen: mantiene una velocità oltre il limite normale per la durata dello scatto
+  if (game.dashTimer > 0) {
+    player.vx = (player.facing || 1) * PLAYER_RUN_MAX_SPEED * DASH_SPEED_MULT;
+  }
 
   player.x += player.vx * dt;
   player.x = clamp(player.x, 140, game.worldWidth - 140);
@@ -2077,17 +2318,26 @@ function updateGame(dt) {
     return;
   }
 
+  // Planata del Bimbo: tieni premuto abilità mentre cadi per limitare la velocità di discesa
+  const gliding = getActiveKey() === 'kid' && controls.ability && !player.grounded && player.vy > 0;
+
   let needsRespawn = false;
   for (const member of game.family) {
     const surfaceY = getTerrainSurfaceAt(member.x, game.currentSection);
     if (surfaceY !== null) {
       member.vy += GRAVITY * dt;
+      if (gliding && member === player && member.vy > GLIDE_MAX_FALL) {
+        member.vy = GLIDE_MAX_FALL;
+      }
       member.y += member.vy * dt;
       if (member.y >= surfaceY + (member.groundOffset || 0)) {
         member.y = surfaceY + (member.groundOffset || 0);
         member.vy = 0;
         member.grounded = true;
         member.coyoteTimer = 0;
+        if (member === player) {
+          game.doubleJumpUsed = false;
+        }
       } else {
         member.grounded = false;
       }
@@ -2102,6 +2352,9 @@ function updateGame(dt) {
     } else {
       member.grounded = false;
       member.vy += GRAVITY * dt;
+      if (gliding && member === player && member.vy > GLIDE_MAX_FALL) {
+        member.vy = GLIDE_MAX_FALL;
+      }
       member.y += member.vy * dt;
     }
     if (member.y > FALL_RESET_Y) {
@@ -2384,6 +2637,15 @@ window.addEventListener('keydown', (e) => {
   } else if (key === 'shift') {
     e.preventDefault();
     setControlState('run', true);
+  } else if (key === 'f' || key === 'k') {
+    e.preventDefault();
+    if (!e.repeat) setControlState('ability', true);
+  } else if (key === 'e' || key === 'tab') {
+    e.preventDefault();
+    if (!e.repeat) cycleActiveCharacter(1);
+  } else if (key === 'q') {
+    e.preventDefault();
+    if (!e.repeat) cycleActiveCharacter(-1);
   } else if (key === 'r') {
     resetGame();
     lastTime = 0;
@@ -2409,6 +2671,9 @@ window.addEventListener('keyup', (e) => {
   } else if (key === 'shift') {
     e.preventDefault();
     setControlState('run', false);
+  } else if (key === 'f' || key === 'k') {
+    e.preventDefault();
+    setControlState('ability', false);
   }
 });
 
@@ -2449,6 +2714,7 @@ Promise.all([loadConfig(), loadSprites(), loadEnemySprites(), loadTerrainData()]
   bindTouchControls();
   bindPauseButton();
   bindRestartButton();
+  bindSwitchButton();
   resetGame();
   requestAnimationFrame(render);
 });
