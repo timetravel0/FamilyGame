@@ -266,6 +266,9 @@ function normalizeLevelEntry(entry, fallback, index) {
     enemyCounts: Array.isArray(entry?.enemyCounts) && entry.enemyCounts.length
       ? entry.enemyCounts.map((value) => Math.max(0, Math.floor(Number(value) || 0)))
       : (fallback.enemyCounts || []).slice(),
+    enemies: Array.isArray(entry?.enemies) && entry.enemies.length
+      ? entry.enemies.map(e => ({ section: Number(e.section) || 0, x: Number(e.x) || 0, type: String(e.type || 'banditi') }))
+      : undefined,
     startMessage: entry?.startMessage || (index === 0 ? DEFAULT_CONFIG.game.startMessage : 'Secondo livello: continua verso destra'),
   };
 }
@@ -328,8 +331,9 @@ function buildLevelDefinitions(loadedConfig) {
       segments: defaultSegments,
       terrainProfiles: terrainFallbackForIndex(0).terrainProfiles,
       solidSpans: terrainFallbackForIndex(0).solidSpans,
-      collectibles: fallbackLevel.collectibles,
+      collectibles: terrainFallbackForIndex(0).collectibles || fallbackLevel.collectibles,
       enemyCounts: fallbackLevel.enemyCounts,
+      enemies: terrainFallbackForIndex(0).enemies,
       startMessage: DEFAULT_CONFIG.game.startMessage
     }, fallbackLevel, 0),
     normalizeLevelEntry({
@@ -352,8 +356,9 @@ function buildLevelDefinitions(loadedConfig) {
       ],
       terrainProfiles: terrainFallbackForIndex(1).terrainProfiles,
       solidSpans: terrainFallbackForIndex(1).solidSpans,
-      collectibles: fallbackLevel.collectibles,
+      collectibles: terrainFallbackForIndex(1).collectibles || fallbackLevel.collectibles,
       enemyCounts: fallbackLevel.enemyCounts,
+      enemies: terrainFallbackForIndex(1).enemies,
       mirrorCollectibles: true,
       startMessage: 'Secondo livello: continua verso destra'
     }, fallbackLevel, 1)
@@ -750,14 +755,14 @@ function setControlState(name, pressed) {
   if (name === 'ability' && pressed) {
     triggerAbility();
   }
-  const button = document.querySelector(`#touch-controls [data-control="${name}"]`);
+  const button = document.querySelector(`[data-control="${name}"]`);
   if (button) {
     button.classList.toggle('active', pressed);
   }
 }
 
 function bindTouchControls() {
-  const buttons = document.querySelectorAll('#touch-controls [data-control]');
+  const buttons = document.querySelectorAll('[data-control]');
   for (const button of buttons) {
     const name = button.getAttribute('data-control');
     button.addEventListener('pointerdown', (event) => {
@@ -772,6 +777,48 @@ function bindTouchControls() {
     button.addEventListener('lostpointercapture', release);
     button.addEventListener('contextmenu', (event) => event.preventDefault());
   }
+}
+
+function bindDpad() {
+  const zone = document.getElementById('tc-lr');
+  if (!zone) return;
+  const active = new Map(); // pointerId → 'left' | 'right'
+
+  function getSide(e) {
+    const rect = zone.getBoundingClientRect();
+    return e.clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+  }
+
+  function syncDpad() {
+    const sides = new Set(active.values());
+    setControlState('left',  sides.has('left'));
+    setControlState('right', sides.has('right'));
+    document.querySelector('.tc-left-arrow')?.classList.toggle('active',  sides.has('left'));
+    document.querySelector('.tc-right-arrow')?.classList.toggle('active', sides.has('right'));
+  }
+
+  zone.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (audio.init) audio.init();
+    zone.setPointerCapture(e.pointerId);
+    active.set(e.pointerId, getSide(e));
+    syncDpad();
+  });
+
+  zone.addEventListener('pointermove', (e) => {
+    if (!active.has(e.pointerId)) return;
+    const side = getSide(e);
+    if (active.get(e.pointerId) !== side) {
+      active.set(e.pointerId, side);
+      syncDpad();
+    }
+  });
+
+  function release(e) { active.delete(e.pointerId); syncDpad(); }
+  zone.addEventListener('pointerup',          release);
+  zone.addEventListener('pointercancel',       release);
+  zone.addEventListener('lostpointercapture',  release);
+  zone.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 function bindPauseButton() {
@@ -818,19 +865,18 @@ function updateRestartButtonVisibility() {
   const btn = document.getElementById('restart-btn');
   if (!btn) return;
   const shouldShow = game.screen === GAME_SCREENS.GAMEOVER || game.screen === GAME_SCREENS.WIN;
-  btn.style.display = shouldShow ? 'block' : 'none';
-  
-  // Show/hide pause button based on game state
+  btn.style.display = shouldShow ? '' : 'none';
+
   const pauseBtn = document.getElementById('pause-btn');
   if (pauseBtn) {
-    pauseBtn.style.display = shouldShow ? 'none' : 'block';
+    pauseBtn.style.display = shouldShow ? 'none' : '';
   }
 
   // Il pulsante "cambia personaggio" serve solo in modalità famiglia durante il gioco
   const switchBtn = document.getElementById('switch-btn');
   if (switchBtn) {
     const showSwitch = game.screen === GAME_SCREENS.PLAYING && game.family.length > 1;
-    switchBtn.style.display = showSwitch ? 'block' : 'none';
+    switchBtn.style.display = showSwitch ? '' : 'none';
   }
 }
 
@@ -972,7 +1018,9 @@ function normalizeTerrainData(data) {
           backgroundPath: level?.backgroundPath || null,
           sourceSectionHeight: sourceHeight,
           terrainProfiles: normalized.terrainProfiles,
-          solidSpans: normalized.solidSpans
+          solidSpans: normalized.solidSpans,
+          collectibles: Array.isArray(level?.collectibles) ? level.collectibles.map(c => ({ ...c })) : undefined,
+          enemies: Array.isArray(level?.enemies) ? level.enemies.map(e => ({ ...e })) : undefined
         };
       })
     };
@@ -1177,6 +1225,40 @@ function findEnemySpawnX(sectionIndex, minDistanceFromStart = 900) {
 
 function seedEnemies() {
   const level = getCurrentLevelDefinition();
+
+  // Se il livello ha un posizionamento esplicito dei nemici, usalo
+  const explicitEnemies = Array.isArray(level?.enemies) && level.enemies.length ? level.enemies : null;
+  if (explicitEnemies) {
+    game.enemies = explicitEnemies.map((def) => {
+      const type = ENEMY_TYPES.find(t => t.key === def.type) || ENEMY_TYPES[0];
+      const section = Number(def.section) || 0;
+      const x = Math.max(0, Number(def.x) || 0);
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      return {
+        section, x, y: getTerrainYAt(x, section),
+        vx: 0, dir, facing: dir,
+        speed: type.speed + section * 18,
+        sprite: type.sprite, scale: type.scale,
+        bobPhase: Math.random() * 6,
+        grounded: true,
+        type: type.key, typeLabel: type.label,
+        attackWindup: type.attackWindup,
+        attackDuration: type.attackDuration,
+        attackCooldownMax: type.attackCooldown,
+        attackImpactAt: type.attackImpactAt,
+        attackKnockback: type.attackKnockback,
+        aggroRange: type.aggroRange,
+        patrolMin: Math.max(SECTION_START_X, x - 800),
+        patrolMax: Math.min(SECTION_END_X, x + 800),
+        hitRadius: type.hitRadius,
+        attackRange: type.hitRadius + 54,
+        attackCooldown: 0, attackTimer: 0, attackLock: false,
+        damageDealt: false, action: 'idle', defeated: false, stunTimer: 0
+      };
+    });
+    return;
+  }
+
   const enemyCounts = level?.enemyCounts || config.enemies?.perSection || DEFAULT_CONFIG.enemies.perSection;
   const perSection = Array.from({ length: LEVEL_SEGMENTS.length }, (_, index) => {
     const value = enemyCounts?.[index];
@@ -2677,19 +2759,53 @@ window.addEventListener('keyup', (e) => {
   }
 });
 
+let _canvasTouchStartX = null;
+let _canvasTouchStartId = null;
+
 canvas.addEventListener('pointerdown', (event) => {
-  if (audio.init) audio.init(); // Initialize audio on first interaction
-  
-  // Handle title screen - tap to start
+  if (audio.init) audio.init();
+
   if (game.screen === GAME_SCREENS.TITLE_SCREEN) {
     event.preventDefault();
     setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
     return;
   }
-  
-  if (game.screen !== GAME_SCREENS.CHARACTER_SELECT) {
+
+  // Tap sul canvas per uscire da pausa / riavviare da gameover-win
+  if (game.screen === GAME_SCREENS.PAUSED) {
+    event.preventDefault();
+    setGameScreen(GAME_SCREENS.PLAYING);
     return;
   }
+  if (game.screen === GAME_SCREENS.GAMEOVER || game.screen === GAME_SCREENS.WIN) {
+    event.preventDefault();
+    setGameScreen(GAME_SCREENS.CHARACTER_SELECT);
+    return;
+  }
+
+  if (game.screen === GAME_SCREENS.CHARACTER_SELECT) {
+    event.preventDefault();
+    _canvasTouchStartX  = event.clientX;
+    _canvasTouchStartId = event.pointerId;
+  }
+});
+
+// Tap o swipe sul canvas durante la selezione personaggio
+canvas.addEventListener('pointerup', (event) => {
+  if (game.screen !== GAME_SCREENS.CHARACTER_SELECT) return;
+  if (_canvasTouchStartId === null || event.pointerId !== _canvasTouchStartId) return;
+
+  const dx = event.clientX - _canvasTouchStartX;
+  _canvasTouchStartX  = null;
+  _canvasTouchStartId = null;
+
+  // Swipe: naviga tra i personaggi
+  if (Math.abs(dx) > 50) {
+    moveCharacterSelection(dx < 0 ? 1 : -1);
+    return;
+  }
+
+  // Tap: controlla hit-box di selezione e conferma
   const rect = canvas.getBoundingClientRect();
   const x = (event.clientX - rect.left) * (WIDTH / rect.width);
   const y = (event.clientY - rect.top) * (HEIGHT / rect.height);
@@ -2712,6 +2828,7 @@ Promise.all([loadConfig(), loadSprites(), loadEnemySprites(), loadTerrainData()]
   applyConfig(loadedConfig);
   await loadLevelBackgrounds();
   bindTouchControls();
+  bindDpad();
   bindPauseButton();
   bindRestartButton();
   bindSwitchButton();
