@@ -49,7 +49,7 @@
         position: relative;
         z-index: 1;
         width: 100%;
-        max-width: min(480px, calc((100vh - 110px) * 1080 / 1440));
+        max-width: calc(min(100vw - 24px, (100vh - 110px) * 1080 / 1440));
       }
       .titlebar {
         display: flex;
@@ -136,7 +136,12 @@
         touch-action: none;
         user-select: none;
       }
-      #tc-move { left: 10px; width: 148px; }
+      #tc-move { left: 10px; width: 148px; display: flex; flex-direction: column; gap: 5px; }
+      .tc-down {
+        width: 100%;
+        height: 36px;
+        font-size: 18px;
+      }
       #tc-actions {
         right: 10px;
         width: 156px;
@@ -247,6 +252,7 @@
       @media (pointer: coarse) and (max-height: 560px) {
         #tc-move, #tc-actions { bottom: 6px; }
         #tc-lr { height: 62px; }
+        .tc-down { height: 28px; }
         .tc-jump { height: 46px; }
         .tc-ability, .tc-run { height: 44px; }
         .tc-switch, .tc-pause, .tc-restart { height: 36px; }
@@ -265,12 +271,13 @@
         <a class="editor-link" href="./terrain-editor.html">Editor</a>
       </div>
     </div>
-    <!-- D-Pad sinistra: zone con slide sinistra/destra -->
+    <!-- D-Pad sinistra: zone con slide sinistra/destra + fast-fall -->
     <div id="tc-move" aria-label="Movimento">
       <div id="tc-lr">
         <div class="tc-arrow tc-left-arrow"  aria-label="Sinistra">◀</div>
         <div class="tc-arrow tc-right-arrow" aria-label="Destra">▶</div>
       </div>
+      <button class="tc-btn tc-down" type="button" data-control="down" aria-label="Giù">▼</button>
     </div>
     <!-- Pulsanti azione destra -->
     <div id="tc-actions" aria-label="Azioni">

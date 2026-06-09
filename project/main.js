@@ -347,7 +347,7 @@ function buildLevelDefinitions(loadedConfig) {
         './level2_strip_2.png',
         './level2_strip_3.png'
       ],
-      bandHeight: DEFAULT_LEVEL_BAND_HEIGHT,
+      bandHeight: Math.round(DEFAULT_LEVEL_BAND_HEIGHT * 256 / 341),
       segments: [
         { sy: 0, sh: 256 },
         { sy: 256, sh: 256 },
@@ -504,6 +504,9 @@ const ABILITIES = {
 const GLIDE_MAX_FALL = 360;     // velocità di caduta massima durante la planata del Bimbo
 const DASH_SPEED_MULT = 1.7;    // moltiplicatore velocità durante lo scatto del Teen
 const DASH_DURATION = 0.18;
+const FALL_GRAVITY_MULT = 1.55; // gravità extra durante la caduta (asimmetrica)
+const JUMP_CUT_EXTRA   = 1.8;   // gravità extra quando si rilascia il salto prima del picco
+const FAST_FALL_EXTRA  = 2.2;   // gravità extra premendo giù in aria
 
 const game = {
   screen: GAME_SCREENS.TITLE_SCREEN,
@@ -545,7 +548,8 @@ const game = {
   abilityCooldown: 0,
   doubleJumpUsed: false,
   dashTimer: 0,
-  shockwave: null
+  shockwave: null,
+  transition: null,
 };
 
 // Physics constants (computed from config in applyConfig)
@@ -1312,7 +1316,7 @@ function seedEnemies() {
 }
 
 function updateCamera() {
-  game.cameraX = clamp(game.family[0].x - WIDTH * 0.34, 0, game.worldWidth - WIDTH);
+  game.cameraX = clamp(game.family[0].x - WIDTH * 0.34, 0, Math.max(0, LEVEL_SECTION_WIDTH - WIDTH));
 }
 
 function getActiveFormation() {
@@ -2042,9 +2046,29 @@ function spawnText(x, y, text, color = palette.gold1, scale = 0.7) {
   game.particles.push({ x, y, text, color, vy: -180, life: 1.2, maxLife: 1.2, scale });
 }
 
+function spawnDeathParticles(x, y) {
+  const colors = ['#ffe66d', '#ff5b78', '#ffffff', '#67d96b', '#bfe7ff', '#ffb43d'];
+  for (let i = 0; i < 14; i++) {
+    const angle = (i / 14) * Math.PI * 2 + Math.random() * 0.4;
+    const speed = 220 + Math.random() * 420;
+    const life = 0.45 + Math.random() * 0.35;
+    game.particles.push({
+      type: 'pixel',
+      x, y: y - 80,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 280,
+      size: 9 + Math.random() * 10,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      life, maxLife: life,
+    });
+  }
+}
+
 function updateParticles(dt) {
   for (const p of game.particles) {
+    p.x += (p.vx || 0) * dt;
     p.y += p.vy * dt;
+    if (p.type === 'pixel') p.vy += 1800 * dt;
     p.life -= dt;
   }
   game.particles = game.particles.filter((p) => p.life > 0);
@@ -2055,7 +2079,13 @@ function drawParticles(cameraX = 0) {
   for (const p of game.particles) {
     const alpha = p.life / p.maxLife;
     ctx.globalAlpha = alpha;
-    pxText(p.text, p.x - cameraX, p.y, p.color, p.scale, 'center');
+    if (p.type === 'pixel') {
+      ctx.fillStyle = p.color;
+      const s = Math.round(p.size * (0.4 + alpha * 0.6));
+      ctx.fillRect(Math.round(p.x - cameraX - s / 2), Math.round(p.y - s / 2), s, s);
+    } else {
+      pxText(p.text, p.x - cameraX, p.y, p.color, p.scale, 'center');
+    }
   }
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -2112,6 +2142,7 @@ function updateEnemies(dt, player) {
         player.grounded = false;
         game.score += 2;
         spawnText(enemy.x, enemy.y - 100, 'KO!', palette.gold1, 0.9);
+        spawnDeathParticles(enemy.x, enemy.y);
         audio.collectStar();
         continue;
       }
@@ -2147,6 +2178,7 @@ function updateEnemies(dt, player) {
         player.grounded = false;
         game.score += 2;
         spawnText(enemy.x, enemy.y - 100, 'KO!', palette.gold1, 0.9);
+        spawnDeathParticles(enemy.x, enemy.y);
         audio.collectStar();
         return true;
       }
@@ -2274,6 +2306,13 @@ function drawWorld(cameraX, t) {
 }
 
 function updateGame(dt) {
+  if (game.transition) {
+    game.transition.progress += dt / game.transition.duration;
+    if (game.transition.progress >= 1) game.transition = null;
+    updateParticles(dt);
+    return;
+  }
+
   // Aggiorna overlayAlpha per stati con overlay
   if (game.screen !== GAME_SCREENS.PLAYING &&
       game.screen !== GAME_SCREENS.CHARACTER_SELECT) {
@@ -2386,9 +2425,14 @@ function updateGame(dt) {
 
   if (player.grounded && player.x >= SECTION_END_VISUAL_X) {
     if (game.currentSection < LEVEL_SEGMENTS.length - 1) {
+      const offscreen = document.createElement('canvas');
+      offscreen.width = WIDTH;
+      offscreen.height = HEIGHT;
+      offscreen.getContext('2d').drawImage(canvas, 0, 0);
       placeFamilyAtSectionStart(game.currentSection + 1);
       game.message = `Schermata ${game.currentSection + 1} di ${LEVEL_SEGMENTS.length}`;
       game.showCenterMessage = true;
+      game.transition = { progress: 0, duration: 0.55, offscreen };
       spawnText(game.cameraX + WIDTH / 2, HEIGHT / 2, 'AVANTI!', palette.energy, 1.2);
       return;
     }
@@ -2402,12 +2446,25 @@ function updateGame(dt) {
 
   // Planata del Bimbo: tieni premuto abilità mentre cadi per limitare la velocità di discesa
   const gliding = getActiveKey() === 'kid' && controls.ability && !player.grounded && player.vy > 0;
+  const jumpHeld = controls.jump || controls.up;
+
+  const effectiveGravity = (member) => {
+    let g = GRAVITY;
+    if (member.vy > 0) g *= FALL_GRAVITY_MULT;                              // caduta asimmetrica
+    if (member === player) {
+      if (!jumpHeld && member.vy < 0) g += GRAVITY * JUMP_CUT_EXTRA;        // taglia il salto
+      if (controls.down && !gliding && !member.grounded && member.vy >= -200) {
+        g += GRAVITY * FAST_FALL_EXTRA;                                      // fast-fall
+      }
+    }
+    return g;
+  };
 
   let needsRespawn = false;
   for (const member of game.family) {
     const surfaceY = getTerrainSurfaceAt(member.x, game.currentSection);
     if (surfaceY !== null) {
-      member.vy += GRAVITY * dt;
+      member.vy += effectiveGravity(member) * dt;
       if (gliding && member === player && member.vy > GLIDE_MAX_FALL) {
         member.vy = GLIDE_MAX_FALL;
       }
@@ -2433,7 +2490,7 @@ function updateGame(dt) {
       }
     } else {
       member.grounded = false;
-      member.vy += GRAVITY * dt;
+      member.vy += effectiveGravity(member) * dt;
       if (gliding && member === player && member.vy > GLIDE_MAX_FALL) {
         member.vy = GLIDE_MAX_FALL;
       }
@@ -2510,20 +2567,35 @@ function drawPauseOverlay() {
   drawOverlay(game.overlayAlpha, '#000818');
   const cx = WIDTH / 2;
 
-  pixelRect(cx - 340, 540, 680, 360, '#020816');
-  pixelRect(cx - 340, 536, 680, 8, palette.hudLine);
-  pixelRect(cx - 340, 892, 680, 8, palette.hudLine);
+  pixelRect(cx - 360, 490, 720, 520, '#020816');
+  pixelRect(cx - 360, 486, 720, 8, palette.hudLine);
+  pixelRect(cx - 360, 1002, 720, 8, '#4a3a78');
 
-  pxText('IN PAUSA', cx, 580, '#bfe7ff', 1.6, 'center');
+  pxText('⏸', cx - 210, 558, '#bfe7ff', 1.4, 'center');
+  pxText('PAUSA', cx + 60, 558, '#bfe7ff', 1.4, 'center');
 
-  pxText(`STELLE  ${game.gemsCollected}/${game.totalGems}`, cx, 710, palette.gold1, 0.8, 'center');
-  pxText(`TEMPO   ${formatTimer(game.timer)}`, cx, 780, '#ffffff', 0.8, 'center');
-  const finalWinBonusDisplay = game.score * game.scoreMultiplier;
-  pxText(String(finalWinBonusDisplay).padStart(5, '0'), cx, 850, '#ffe66d', 0.8, 'center');
+  pixelRect(cx - 320, 610, 640, 4, '#2c2350');
 
-  pixelRect(cx - 320, 930, 640, 130, '#07152a');
-  pxText('ESC — RIPRENDI', cx, 950, '#8dff8f', 0.72, 'center');
-  pxText('R — MENU PRINCIPALE', cx, 1018, '#ff9f9f', 0.72, 'center');
+  const col1 = cx - 260;
+  const col2 = cx + 80;
+  pxText('STELLE',  col1, 660, '#7a8fa8', 0.64);
+  pxText(`${game.gemsCollected} / ${game.totalGems}`, col2, 660, palette.gold1, 0.9);
+
+  pxText('TEMPO',   col1, 740, '#7a8fa8', 0.64);
+  pxText(formatTimer(game.timer), col2, 740, game.timer < 30 ? '#ff7979' : '#ffffff', 0.9);
+
+  pxText('PUNTI',   col1, 820, '#7a8fa8', 0.64);
+  pxText(String(game.score * game.scoreMultiplier).padStart(5, '0'), col2, 820, '#ffe66d', 0.9);
+
+  pxText('VITE',    col1, 900, '#7a8fa8', 0.64);
+  for (let i = 0; i < Math.max(game.lives, 0); i++) {
+    pxText('♥', col2 + i * 42, 900, palette.heart, 0.88);
+  }
+
+  pixelRect(cx - 340, 1040, 680, 80, '#0d1f0d');
+  pixelRect(cx - 340, 1036, 680, 6, '#2a6b2a');
+  pxText('ESC — RIPRENDI', cx - 80, 1060, '#8dff8f', 0.72, 'center');
+  pxText('R — MENU', cx + 200, 1060, '#ff9f9f', 0.72, 'center');
 }
 
 function drawGameOverOverlay(t) {
@@ -2600,6 +2672,25 @@ function drawWinOverlay(t) {
 function renderScene(t) {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.imageSmoothingEnabled = false;
+
+  if (game.transition) {
+    const p = Math.min(1, game.transition.progress);
+    const eased = 1 - (1 - p) * (1 - p);
+    const offset = Math.round(WIDTH * eased);
+    ctx.save();
+    ctx.translate(WIDTH - offset, 0);
+    drawWorld(game.cameraX, t);
+    drawCenterPanel();
+    drawSparkles(t);
+    drawBottomPanels();
+    drawHUD(t);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(-offset, 0);
+    ctx.drawImage(game.transition.offscreen, 0, 0);
+    ctx.restore();
+    return;
+  }
 
   switch (game.screen) {
     case GAME_SCREENS.TITLE_SCREEN:
@@ -2716,6 +2807,9 @@ window.addEventListener('keydown', (e) => {
   } else if (key === 'arrowup' || key === 'w' || key === ' ') {
     e.preventDefault();
     setControlState('jump', true);
+  } else if (key === 'arrowdown' || key === 's') {
+    e.preventDefault();
+    setControlState('down', true);
   } else if (key === 'shift') {
     e.preventDefault();
     setControlState('run', true);
@@ -2750,6 +2844,9 @@ window.addEventListener('keyup', (e) => {
   } else if (key === 'arrowup' || key === 'w' || key === ' ') {
     e.preventDefault();
     setControlState('jump', false);
+  } else if (key === 'arrowdown' || key === 's') {
+    e.preventDefault();
+    setControlState('down', false);
   } else if (key === 'shift') {
     e.preventDefault();
     setControlState('run', false);
